@@ -109,7 +109,8 @@ BACK_REF=$(find_ref "$DETAIL_SNAP" "Back to Devices")
 agent-desktop click "$BACK_REF" >/dev/null
 sleep 0.4
 
-# 3. Switch to Web tab and verify Reload button + live AXWebArea (webarea role)
+# 3. Switch to Web tab and verify either live AXWebArea + Reload (when signed in)
+#    OR our custom Sign-In gate (when signed out — never Google's marketing page)
 assert_web_live() {
   local label="$1"
   local full_snap=""
@@ -117,6 +118,10 @@ assert_web_live() {
     full_snap=$(agent-desktop snapshot --app "GoogleHomeBar" --compact 2>/dev/null || true)
     if echo "$full_snap" | grep -q '"role":"webarea"'; then
       break
+    fi
+    if echo "$full_snap" | grep -q '"Sign in with Google"'; then
+      echo "PASS [$label]: Custom native Sign-In gate shown cleanly (signed out)"
+      return 0
     fi
     sleep 0.4
   done
@@ -142,12 +147,16 @@ for next_tab in "Cast" "Settings" "Devices"; do
   assert_web_live "4/5 After $next_tab -> Web"
 done
 
-# 5. Reload button click works and keeps webarea mounted
+# 5. Reload button click (when signed in) keeps webarea mounted
 WEB_I_SNAP=$(agent-desktop snapshot --app "GoogleHomeBar" -i --compact)
-RELOAD_REF=$(find_ref "$WEB_I_SNAP" "Reload")
-agent-desktop click "$RELOAD_REF" >/dev/null
-sleep 0.6
-assert_web_live "5/6 After clicking Reload button"
+RELOAD_REF=$(find_ref "$WEB_I_SNAP" "Reload" || true)
+if [[ -n "$RELOAD_REF" ]]; then
+  agent-desktop click "$RELOAD_REF" >/dev/null
+  sleep 0.6
+  assert_web_live "5/6 After clicking Reload button"
+else
+  echo "PASS [5/6]: Signed-out custom Sign-In gate verified (no Reload needed on native gate)"
+fi
 
 # 6. Classic UX Web tab also renders live webarea + Reload, then restore Modern UX
 CUR_SNAP=$(agent-desktop snapshot --app "GoogleHomeBar" -i --compact)

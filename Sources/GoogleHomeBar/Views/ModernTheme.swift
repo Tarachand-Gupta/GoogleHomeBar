@@ -1,4 +1,5 @@
 import AppKit
+import GoogleHomeBarCore
 import SwiftUI
 
 /// Color-scheme-aware design tokens for the Modern smart-home UI (Light & Dark modes).
@@ -66,7 +67,7 @@ struct ModernPalette {
     var border: Color {
         isDark
             ? Color.white.opacity(0.11)
-            : Color.black.opacity(0.07)
+            : Color.black.opacity(0.09)
     }
 
     var glassRimHighlight: LinearGradient {
@@ -74,7 +75,7 @@ struct ModernPalette {
             colors: [
                 Color.white.opacity(isDark ? 0.24 : 0.85),
                 Color.white.opacity(isDark ? 0.05 : 0.25),
-                Color.black.opacity(isDark ? 0.20 : 0.06),
+                Color.black.opacity(isDark ? 0.20 : 0.08),
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -85,7 +86,7 @@ struct ModernPalette {
     var cardShadow: Color {
         isDark
             ? Color.black.opacity(0.42)
-            : Color(red: 0.08, green: 0.12, blue: 0.22).opacity(0.075)
+            : Color(red: 0.08, green: 0.12, blue: 0.22).opacity(0.085)
     }
 
     /// Floating navigation dock backdrop (fallback for macOS 14–15).
@@ -101,23 +102,23 @@ struct ModernPalette {
             : Color(red: 0.07, green: 0.12, blue: 0.22).opacity(0.16)
     }
 
-    /// Primary & secondary ink.
+    /// Primary & secondary ink (high contrast in both Light and Dark mode).
     var textPrimary: Color {
         isDark
-            ? Color(red: 0.955, green: 0.965, blue: 0.985)
-            : Color(red: 0.105, green: 0.125, blue: 0.165)
+            ? Color(red: 0.960, green: 0.968, blue: 0.988)
+            : Color(red: 0.090, green: 0.110, blue: 0.155)
     }
 
     var textSecondary: Color {
         isDark
-            ? Color(red: 0.625, green: 0.670, blue: 0.745)
-            : Color(red: 0.435, green: 0.475, blue: 0.545)
+            ? Color(red: 0.655, green: 0.700, blue: 0.775)
+            : Color(red: 0.345, green: 0.388, blue: 0.465)
     }
 
     var textMuted: Color {
         isDark
-            ? Color(red: 0.455, green: 0.500, blue: 0.580)
-            : Color(red: 0.595, green: 0.630, blue: 0.695)
+            ? Color(red: 0.495, green: 0.540, blue: 0.620)
+            : Color(red: 0.465, green: 0.505, blue: 0.580)
     }
 
     /// Dial track, ticks, and sculpted center dome.
@@ -151,7 +152,7 @@ struct ModernPalette {
             : Color(red: 0.10, green: 0.15, blue: 0.25).opacity(0.16)
     }
 
-    /// Featured climate hero card atmospheric gradient.
+    /// Featured climate hero card atmospheric gradient (high-contrast cobalt-azure in Light, deep ocean in Dark).
     var heroGradientColors: [Color] {
         isDark
             ? [
@@ -160,16 +161,16 @@ struct ModernPalette {
                 Color(red: 0.125, green: 0.180, blue: 0.275),
             ]
             : [
-                Color(red: 0.720, green: 0.815, blue: 0.915),
-                Color(red: 0.605, green: 0.725, blue: 0.855),
-                Color(red: 0.785, green: 0.850, blue: 0.925),
+                Color(red: 0.155, green: 0.445, blue: 0.780),
+                Color(red: 0.095, green: 0.325, blue: 0.645),
+                Color(red: 0.215, green: 0.515, blue: 0.835),
             ]
     }
 
     var heroStripFill: Color {
         isDark
-            ? Color(red: 0.085, green: 0.105, blue: 0.145).opacity(0.82)
-            : Color.white.opacity(0.84)
+            ? Color(red: 0.085, green: 0.105, blue: 0.145).opacity(0.86)
+            : Color.white.opacity(0.92)
     }
 
     var toggleOffTrack: Color {
@@ -281,6 +282,99 @@ extension View {
         } else {
             self
         }
+    }
+
+    /// Subtle leading & trailing edge dissolve for horizontally scrollable pill bars.
+    func horizontalEdgeFade(width: CGFloat = 16) -> some View {
+        mask {
+            GeometryReader { geo in
+                let total = max(geo.size.width, 1)
+                let stop = min(max(Double(width / total), 0.02), 0.16)
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: stop),
+                        .init(color: .black, location: 1.0 - stop),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            }
+        }
+    }
+}
+
+/// Contrast-safe smart-home color utilities so low-brightness RGB bulbs (e.g. 1% brightness -> rgb=0)
+/// never render pitch black in Dark Mode or invisible white-on-white in Light Mode.
+enum GoogleHomeColorUtil {
+    static func normalizedLightColor(fromRGBInt rgb: Int, isDark: Bool) -> Color {
+        let r = CGFloat((rgb >> 16) & 0xFF) / 255.0
+        let g = CGFloat((rgb >> 8) & 0xFF) / 255.0
+        let b = CGFloat(rgb & 0xFF) / 255.0
+
+        var h: CGFloat = 0
+        var s: CGFloat = 0
+        var v: CGFloat = 0
+        var a: CGFloat = 0
+        NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0).getHue(&h, saturation: &s, brightness: &v, alpha: &a)
+
+        // Google Home sometimes reports rgb=0 (or near-black) when a color bulb is dimmed to 1%.
+        if rgb == 0 || (v < 0.08 && s < 0.10) {
+            return isDark
+                ? Color(red: 0.98, green: 0.72, blue: 0.28)
+                : Color(red: 0.88, green: 0.50, blue: 0.08)
+        }
+
+        let safeS = min(max(s, isDark ? 0.35 : 0.45), 0.92)
+        let safeV: CGFloat = isDark
+            ? max(v, 0.80)
+            : min(max(v, 0.54), 0.82)
+        let ns = NSColor(hue: h, saturation: safeS, brightness: safeV, alpha: 1.0)
+            .usingColorSpace(.sRGB) ?? .systemOrange
+        return Color(red: Double(ns.redComponent), green: Double(ns.greenComponent), blue: Double(ns.blueComponent))
+    }
+
+    static func accentColor(for device: GoogleHomeDevice, isDark: Bool) -> Color {
+        switch device.deviceType {
+        case .light:
+            if let rgb = device.state.colorRGB {
+                return normalizedLightColor(fromRGBInt: rgb, isDark: isDark)
+            }
+            if let k = device.state.colorTemperatureK {
+                if !isDark {
+                    return k >= 4300
+                        ? Color(red: 0.055, green: 0.420, blue: 0.785)
+                        : Color(red: 0.88, green: 0.50, blue: 0.08)
+                }
+                if k < 4300 {
+                    return Color(red: 0.98, green: 0.68, blue: 0.24)
+                }
+                let c = GoogleHomeFoyerCodec.kelvinToRGB(k)
+                return Color(red: c.r, green: c.g, blue: c.b)
+            }
+            return isDark ? Color(red: 0.98, green: 0.68, blue: 0.24) : Color(red: 0.88, green: 0.50, blue: 0.08)
+        case .airConditioner, .thermostat, .heater:
+            switch device.state.thermostatMode?.lowercased() {
+            case "heat": return isDark ? Color(red: 0.98, green: 0.56, blue: 0.22) : Color(red: 0.86, green: 0.38, blue: 0.06)
+            case "dry": return isDark ? Color(red: 0.72, green: 0.52, blue: 0.98) : Color(red: 0.46, green: 0.26, blue: 0.78)
+            case "fan-only": return isDark ? Color(red: 0.22, green: 0.78, blue: 0.78) : Color(red: 0.05, green: 0.52, blue: 0.56)
+            default: return isDark ? Color(red: 0.26, green: 0.74, blue: 0.98) : Color(red: 0.055, green: 0.45, blue: 0.80)
+            }
+        case .fan, .airPurifier:
+            return isDark ? Color(red: 0.22, green: 0.78, blue: 0.76) : Color(red: 0.05, green: 0.54, blue: 0.56)
+        case .humidifier:
+            return isDark ? Color(red: 0.30, green: 0.68, blue: 0.98) : Color(red: 0.08, green: 0.44, blue: 0.80)
+        default:
+            return isDark ? Color(red: 0.26, green: 0.62, blue: 0.98) : Color(red: 0.055, green: 0.420, blue: 0.785)
+        }
+    }
+
+    /// Returns a high-contrast foreground color (black or white) for text/icons rendered on top of `color`.
+    static func contrastingInk(on color: Color) -> Color {
+        guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return .white }
+        let lum = 0.2126 * ns.redComponent + 0.7152 * ns.greenComponent + 0.0722 * ns.blueComponent
+        return lum > 0.56 ? Color.black.opacity(0.86) : Color.white
     }
 }
 

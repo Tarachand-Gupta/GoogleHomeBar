@@ -135,11 +135,16 @@ struct ModernDeviceDetailView: View {
                 .padding(.horizontal, 18)
                 .padding(.top, 6)
                 .padding(.bottom, 16)
+                .frame(maxWidth: 420)
+                .frame(maxWidth: .infinity)
                 .animation(.easeInOut(duration: 0.22), value: controlsInactive)
             }
 
             // Bottom CTA bar (Turn On stays fully highlighted whenever device is online & off)
             bottomActionBar(palette: palette)
+                .frame(maxWidth: 420)
+                .frame(maxWidth: .infinity)
+                .background(palette.canvas)
         }
         .background(palette.canvas)
         .onAppear { syncLocalValues(forceMode: true) }
@@ -264,6 +269,10 @@ struct ModernDeviceDetailView: View {
                 .padding(.vertical, 2)
             }
             .frame(height: 36)
+            .horizontalEdgeFade(width: 18)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
             .onAppear {
                 proxy.scrollTo(device.id, anchor: .center)
             }
@@ -969,10 +978,10 @@ struct ModernDeviceDetailView: View {
 
     private var currentLightDisplayColor: Color {
         if lightModeTab == .color {
-            if let rgb = device.state.colorRGB {
-                return GoogleHomeDeviceDetailView.color(fromRGBInt: rgb)
+            if let rgb = device.state.colorRGB, rgb != 0 {
+                return GoogleHomeColorUtil.normalizedLightColor(fromRGBInt: rgb, isDark: colorScheme == .dark)
             }
-            return Color(hue: localHue, saturation: 0.9, brightness: 1.0)
+            return Color(hue: localHue, saturation: 0.88, brightness: colorScheme == .dark ? 0.96 : 0.78)
         }
         let rgb = GoogleHomeFoyerCodec.kelvinToRGB(Int(localKelvin.rounded()))
         return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
@@ -1785,7 +1794,7 @@ struct ModernDeviceDetailView: View {
         if let k = device.state.colorTemperatureK {
             localKelvin = Double(max(device.state.colorTempMinK, min(device.state.colorTempMaxK, k)))
         }
-        if let rgb = device.state.colorRGB, let h = Self.hue(fromRGBInt: rgb) {
+        if let rgb = device.state.colorRGB, rgb != 0, let h = Self.hue(fromRGBInt: rgb) {
             localHue = h
         }
         if let t = device.state.targetTempC {

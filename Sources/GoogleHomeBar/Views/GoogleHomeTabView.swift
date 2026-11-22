@@ -9,6 +9,8 @@ struct GoogleHomeTabView: View {
     var body: some View {
         if !isDetachedHost && coordinator.isDetachedWindowOpen {
             detachedPlaceholder
+        } else if coordinator.webController.authState == .signedOut {
+            GoogleSignInGateView(coordinator: coordinator, isDetachedHost: isDetachedHost)
         } else {
             VStack(spacing: 0) {
                 webToolbar

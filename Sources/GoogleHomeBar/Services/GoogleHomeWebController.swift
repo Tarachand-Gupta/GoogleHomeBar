@@ -233,6 +233,10 @@ final class GoogleHomeWebController: NSObject {
     private(set) var lastError: String?
     private(set) var hasLoadedInitially = false
     private(set) var authState: GoogleHomeAuthState = .loading
+    var isInteractiveSignInActive = false
+
+    private static let directGoogleSignInURL =
+        URL(string: "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fhome.google.com%2F")!
 
     var onHomeGraphPayload: ((Data) -> Void)?
     var onTraitsPayload: ((Data) -> Void)?
@@ -257,7 +261,13 @@ final class GoogleHomeWebController: NSObject {
         let host = currentURL?.host?.lowercased() ?? ""
         let path = currentURL?.path.lowercased() ?? ""
         return host == "accounts.google.com"
-            || (host == "home.google.com" && (path.hasPrefix("/welcome") || path.hasPrefix("/us/")))
+            || (host == "home.google.com" && (
+                path.hasPrefix("/welcome")
+                    || path.hasPrefix("/intl/")
+                    || path.hasPrefix("/us/")
+                    || path.hasPrefix("/gb/")
+                    || path.hasPrefix("/in/")
+            ))
     }
 
     init(initialZoom: Double = 0.85) {
@@ -295,9 +305,23 @@ final class GoogleHomeWebController: NSObject {
     }
 
     func loadIfNeeded() {
-        guard !hasLoadedInitially else { return }
+        guard !hasLoadedInitially, authState != .signedOut else { return }
         hasLoadedInitially = true
         navigate(to: .home)
+    }
+
+    func beginInteractiveSignIn() {
+        lastError = nil
+        hasLoadedInitially = true
+        authState = .signedOut
+        isInteractiveSignInActive = true
+        webView.load(URLRequest(url: Self.directGoogleSignInURL))
+    }
+
+    func cancelInteractiveSignIn() {
+        isInteractiveSignInActive = false
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
     }
 
     func navigate(to section: GoogleHomeSection) {
@@ -311,7 +335,9 @@ final class GoogleHomeWebController: NSObject {
 
     func reload() {
         lastError = nil
-        if webView.url == nil {
+        if authState == .signedOut && !isInteractiveSignInActive {
+            beginInteractiveSignIn()
+        } else if webView.url == nil || webView.url?.absoluteString == "about:blank" {
             navigate(to: .home)
         } else {
             webView.reload()
@@ -342,19 +368,42 @@ final class GoogleHomeWebController: NSObject {
         NSWorkspace.shared.open(target)
     }
 
+    func setSignedOutPreviewOnly() {
+        authState = .signedOut
+        isInteractiveSignInActive = false
+        hasLoadedInitially = true
+    }
+
     func clearSessionAndSignOut() {
         authState = .signedOut
+        isInteractiveSignInActive = false
+        hasLoadedInitially = true
+        lastError = nil
+        pageTitle = "Signed Out"
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+
         let store = WKWebsiteDataStore.default()
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
-        store.fetchDataRecords(ofTypes: types) { [weak self] records in
+
+        // 1. Delete all Google / Nest cookies directly from WKHTTPCookieStore (including session cookies).
+        store.httpCookieStore.getAllCookies { cookies in
+            for cookie in cookies {
+                let domain = cookie.domain.lowercased()
+                if domain.contains("google") || domain.contains("gstatic") || domain.contains("nest") || domain.contains("youtube") {
+                    store.httpCookieStore.delete(cookie)
+                }
+            }
+        }
+
+        // 2. Purge all persistent site storage / caches / IndexedDB records for Google & Nest domains.
+        store.fetchDataRecords(ofTypes: types) { records in
             let googleRecords = records.filter { record in
                 let name = record.displayName.lowercased()
                 return name.contains("google") || name.contains("gstatic") || name.contains("nest")
             }
-            store.removeData(ofTypes: types, for: googleRecords) { [weak self] in
-                Task { @MainActor [weak self] in
-                    self?.navigate(to: .home)
-                }
+            store.removeData(ofTypes: types, for: googleRecords) {
+                // Stay cleanly in .signedOut so our custom Sign-In gate is shown instead of home.google.com/welcome.
             }
         }
     }
@@ -470,11 +519,13 @@ extension GoogleHomeWebController: WKScriptMessageHandler {
             guard let raw = dict["raw"] as? String, let data = raw.data(using: .utf8) else { return }
             logger.info("homeBridge received GetHomeGraph (\(data.count, privacy: .public)B)")
             authState = .signedIn
+            isInteractiveSignInActive = false
             onHomeGraphPayload?(data)
         case "traits":
             guard let raw = dict["raw"] as? String, let data = raw.data(using: .utf8) else { return }
             logger.info("homeBridge received Traits (\(data.count, privacy: .public)B)")
             authState = .signedIn
+            isInteractiveSignInActive = false
             onTraitsPayload?(data)
         default:
             break
@@ -487,6 +538,18 @@ extension GoogleHomeWebController: WKNavigationDelegate {
         lastError = nil
         if isOnGoogleSignIn {
             authState = .signedOut
+            return
+        }
+        // Detect unauthenticated Google Home marketing page (no SAPISID cookie present on home.google.com).
+        if let host = webView.url?.host?.lowercased(), host == "home.google.com", authState != .signedIn {
+            webView.evaluateJavaScript("Boolean(document.cookie && (document.cookie.indexOf('SAPISID=') !== -1 || document.cookie.indexOf('__Secure-3PAPISID=') !== -1))") { [weak self] result, _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let hasAuthCookie = result as? Bool, !hasAuthCookie, self.authState != .signedIn {
+                        self.authState = .signedOut
+                    }
+                }
+            }
         }
     }
 

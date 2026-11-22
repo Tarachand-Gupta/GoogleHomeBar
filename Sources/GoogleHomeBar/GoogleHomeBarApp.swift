@@ -7,14 +7,15 @@ struct GoogleHomeBarApp: App {
     @State private var coordinator: AppCoordinator
 
     init() {
-        let coord = AppCoordinator()
-        _coordinator = State(initialValue: coord)
         let shouldOpenWindow = CommandLine.arguments.contains("--open-window")
         let shouldOpenPopover = CommandLine.arguments.contains("--open-popover")
         let isDemo = CommandLine.arguments.contains("--demo")
+        let isDemoSignedOut = CommandLine.arguments.contains("--demo-signed-out")
+        let coord = AppCoordinator(isDemoMode: isDemo)
+        _coordinator = State(initialValue: coord)
         Task { @MainActor in
-            if isDemo {
-                coord.homeManager.loadDemoHome()
+            if isDemoSignedOut {
+                coord.webController.setSignedOutPreviewOnly()
             }
             if let delegate = NSApplication.shared.delegate as? AppDelegate {
                 delegate.onReopenRequested = {

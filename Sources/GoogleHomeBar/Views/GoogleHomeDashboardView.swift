@@ -17,7 +17,7 @@ struct GoogleHomeDashboardView: View {
     var body: some View {
         Group {
             if coordinator.webController.authState == .signedOut {
-                signInPromptView
+                GoogleSignInGateView(coordinator: coordinator, isDetachedHost: isDetachedHost)
             } else if coordinator.homeManager.devices.isEmpty {
                 loadingDevicesView
             } else if externalSelection == nil {
@@ -61,7 +61,9 @@ struct GoogleHomeDashboardView: View {
             }
         }
         .onAppear {
-            coordinator.webController.loadIfNeeded()
+            if !coordinator.homeManager.isDemoMode {
+                coordinator.webController.loadIfNeeded()
+            }
         }
     }
 
@@ -187,18 +189,10 @@ struct GoogleHomeDashboardView: View {
                             }
                         }
                     }
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "hand.tap")
-                            .font(.caption2)
-                        Text("Click a card for full controls · Use the power icon to toggle on/off")
-                            .font(.caption2)
-                    }
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 2)
                 }
                 .padding(12)
+                .frame(maxWidth: 660)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -266,12 +260,14 @@ struct GoogleHomeDeviceTile: View {
     let onTapToggle: () -> Void
     let onOpenControls: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var isOn: Bool {
         device.state.isOnline && (device.state.isOn == true)
     }
 
     private var accentColor: Color {
-        GoogleHomeDeviceDetailView.deviceAccentColor(for: device)
+        GoogleHomeColorUtil.accentColor(for: device, isDark: colorScheme == .dark)
     }
 
     var body: some View {
@@ -351,24 +347,26 @@ struct GoogleHomeDeviceTile: View {
         .accessibilityHint("Click to open full controls")
         .overlay(alignment: .topTrailing) {
             if device.supportsOnOff {
+                let powerIconInk: Color = isOn
+                    ? GoogleHomeColorUtil.contrastingInk(on: accentColor)
+                    : Color.secondary
                 Button {
                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     onTapToggle()
                 } label: {
                     Image(systemName: "power")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(isOn ? Color.white : Color.secondary)
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(powerIconInk)
                         .frame(width: 26, height: 26)
                         .background {
                             if isOn {
-                                Circle().fill(accentColor)
+                                Circle()
+                                    .fill(accentColor)
+                                    .overlay(Circle().strokeBorder(Color.white.opacity(0.28), lineWidth: 0.75))
+                                    .shadow(color: accentColor.opacity(0.32), radius: 5, y: 1.5)
                             }
                         }
-                        .liquidGlassSurface(
-                            in: Circle(),
-                            tint: isOn ? accentColor : nil,
-                            interactive: true
-                        )
+                        .modifier(ConditionalClassicPowerGlass(isGlass: !isOn))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.liquidGlassCircle)
@@ -379,5 +377,16 @@ struct GoogleHomeDeviceTile: View {
             }
         }
         .opacity(device.state.isOnline ? 1.0 : 0.6)
+    }
+}
+
+private struct ConditionalClassicPowerGlass: ViewModifier {
+    let isGlass: Bool
+    func body(content: Content) -> some View {
+        if isGlass {
+            content.liquidGlassSurface(in: Circle(), interactive: true)
+        } else {
+            content
+        }
     }
 }

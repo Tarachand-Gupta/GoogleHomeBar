@@ -8,6 +8,7 @@ struct GoogleHomeDeviceDetailView: View {
     var showBackButton: Bool = true
     var onBack: (() -> Void)?
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var colorTab: LightColorTab = .white
     @State private var localBrightness: Double = 100
     @State private var localKelvin: Double = 4000
@@ -111,6 +112,8 @@ struct GoogleHomeDeviceDetailView: View {
                     }
                 }
                 .padding(14)
+                .frame(maxWidth: 460)
+                .frame(maxWidth: .infinity)
             }
         }
         .onAppear { syncLocalControlValues(forceTab: true) }
@@ -937,7 +940,7 @@ struct GoogleHomeDeviceDetailView: View {
     }
 
     private var accentColor: Color {
-        Self.deviceAccentColor(for: device)
+        GoogleHomeColorUtil.accentColor(for: device, isDark: colorScheme == .dark)
     }
 
     static func deviceAccentColor(for device: GoogleHomeDevice) -> Color {

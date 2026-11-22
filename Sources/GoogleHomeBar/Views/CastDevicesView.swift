@@ -31,6 +31,8 @@ struct CastDevicesView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 6)
+                .frame(maxWidth: 660)
+                .frame(maxWidth: .infinity)
             }
 
             if !coordinator.castManager.devices.isEmpty {
@@ -50,6 +52,8 @@ struct CastDevicesView: View {
                     .padding(.horizontal, isModern ? 16 : 12)
                     .padding(.top, 12)
                     .padding(.bottom, bottomInsetForDock ? 78 : 14)
+                    .frame(maxWidth: 660)
+                    .frame(maxWidth: .infinity)
                 }
             }
         }

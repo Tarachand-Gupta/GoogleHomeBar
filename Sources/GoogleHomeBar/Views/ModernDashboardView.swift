@@ -21,7 +21,7 @@ struct ModernDashboardView: View {
 
         Group {
             if coordinator.webController.authState == .signedOut {
-                modernSignInPrompt(palette: palette)
+                GoogleSignInGateView(coordinator: coordinator, isDetachedHost: isDetachedHost)
             } else if coordinator.homeManager.devices.isEmpty {
                 modernLoadingView(palette: palette)
             } else if externalSelection == nil {
@@ -72,7 +72,9 @@ struct ModernDashboardView: View {
         }
         .background(palette.canvas)
         .onAppear {
-            coordinator.webController.loadIfNeeded()
+            if !coordinator.homeManager.isDemoMode {
+                coordinator.webController.loadIfNeeded()
+            }
         }
     }
 
@@ -152,6 +154,8 @@ struct ModernDashboardView: View {
             .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, isDetachedHost ? 20 : 76)
+            .frame(maxWidth: 660)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -333,9 +337,12 @@ struct ModernDashboardView: View {
                     }
                 }
             }
+            .padding(.horizontal, 12)
             .padding(.vertical, 2)
         }
         .frame(height: 36)
+        .horizontalEdgeFade(width: 14)
+        .padding(.horizontal, -12)
     }
 
     private func roomPill(
@@ -570,13 +577,13 @@ struct ModernClimateHeroCard: View {
 
             // Soft architectural lighting highlight
             Circle()
-                .fill(Color.white.opacity(palette.isDark ? 0.06 : 0.35))
+                .fill(Color.white.opacity(palette.isDark ? 0.06 : 0.16))
                 .frame(width: 190, height: 190)
-                .blur(radius: 24)
+                .blur(radius: 26)
                 .offset(x: -110, y: -55)
 
             Circle()
-                .fill(palette.accent.opacity(palette.isDark ? 0.20 : 0.16))
+                .fill(palette.accent.opacity(palette.isDark ? 0.20 : 0.22))
                 .frame(width: 160, height: 160)
                 .blur(radius: 30)
                 .offset(x: 120, y: -30)
@@ -749,31 +756,9 @@ struct ModernDeviceCard: View {
         device.state.isOnline && (device.state.isOn == true)
     }
 
-    /// Ensures light-bulb accents stay high-contrast on light cards (even at pale 6500K-9000K cool white).
+    /// Ensures light-bulb and device accents stay luminous and high-contrast in both Light & Dark mode.
     private func cardAccent(palette: ModernPalette) -> Color {
-        if device.deviceType == .light {
-            if let rgb = device.state.colorRGB {
-                let r = Double((rgb >> 16) & 0xFF) / 255.0
-                let g = Double((rgb >> 8) & 0xFF) / 255.0
-                let b = Double(rgb & 0xFF) / 255.0
-                let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-                if !palette.isDark && luminance > 0.78 {
-                    return Color(red: r * 0.68, green: g * 0.68, blue: b * 0.68)
-                }
-                return Color(red: r, green: g, blue: b)
-            }
-            if let k = device.state.colorTemperatureK {
-                if !palette.isDark {
-                    return k >= 4300
-                        ? palette.accent
-                        : Color(red: 0.88, green: 0.50, blue: 0.08)
-                }
-                let c = GoogleHomeFoyerCodec.kelvinToRGB(k)
-                return Color(red: c.r, green: c.g, blue: c.b)
-            }
-            return .orange
-        }
-        return GoogleHomeDeviceDetailView.deviceAccentColor(for: device)
+        GoogleHomeColorUtil.accentColor(for: device, isDark: palette.isDark)
     }
 
     var body: some View {

@@ -50,6 +50,8 @@ struct SettingsTabView: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
             .padding(.bottom, bottomInsetForDock ? 78 : 16)
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
         }
         .background(isModern ? palette.canvas : Color.clear)
     }
@@ -296,22 +298,30 @@ struct SettingsTabView: View {
             Divider()
 
             HStack {
-                Button("Sign Out of Google Home", role: .destructive) {
-                    showSignOutConfirm = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .confirmationDialog(
-                    "Sign out of Google Home?",
-                    isPresented: $showSignOutConfirm,
-                    titleVisibility: .visible
-                ) {
-                    Button("Sign Out", role: .destructive) {
-                        coordinator.signOut()
+                if coordinator.webController.authState == .signedOut {
+                    Button("Sign In to Google Home") {
+                        coordinator.startSignIn()
                     }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This clears saved Google cookies in GoogleHomeBar and reloads the sign-in screen.")
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button("Sign Out of Google Home", role: .destructive) {
+                        showSignOutConfirm = true
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .confirmationDialog(
+                        "Sign out of Google Home?",
+                        isPresented: $showSignOutConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Sign Out", role: .destructive) {
+                            coordinator.signOut()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This clears saved Google cookies in GoogleHomeBar and returns to the Sign-In screen.")
+                    }
                 }
 
                 Spacer()

@@ -48,6 +48,7 @@ struct MenuBarRootView: View {
             .accessibilityHidden(true)
         }
         .onAppear {
+            if coordinator.homeManager.isDemoMode { return }
             coordinator.wifiMonitor.refreshSnapshot()
             if coordinator.accessEvaluation.isAllowed {
                 coordinator.webController.loadIfNeeded()
@@ -70,7 +71,8 @@ struct MenuBarRootView: View {
     private var modernPopoverShell: some View {
         let palette = ModernPalette(colorScheme: effectiveColorScheme)
         let showingDeviceDetail = (coordinator.selectedTab == .home && modernInlineDeviceId != nil)
-        let showDock = !showingDeviceDetail
+        let showingSignInWeb = coordinator.webController.isInteractiveSignInActive
+        let showDock = !showingDeviceDetail && !showingSignInWeb
 
         return Group {
             if coordinator.selectedTab == .web && coordinator.accessEvaluation.isAllowed {

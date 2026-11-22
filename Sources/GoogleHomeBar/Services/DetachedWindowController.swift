@@ -22,18 +22,21 @@ final class DetachedWindowController: NSObject, NSWindowDelegate {
         hosting.sizingOptions = []
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1020, height: 700),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         win.title = "Google Home"
+        win.titleVisibility = .hidden
         win.titlebarAppearsTransparent = true
+        win.isMovableByWindowBackground = true
         win.isOpaque = false
         win.backgroundColor = .clear
         win.contentViewController = hosting
-        win.setContentSize(NSSize(width: 1020, height: 700))
-        win.minSize = NSSize(width: 720, height: 500)
+        win.setContentSize(NSSize(width: 980, height: 680))
+        win.minSize = NSSize(width: 440, height: 560)
+        win.maxSize = NSSize(width: 1160, height: 960)
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self

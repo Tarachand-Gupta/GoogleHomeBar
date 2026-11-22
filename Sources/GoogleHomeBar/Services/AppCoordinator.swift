@@ -29,7 +29,8 @@ final class AppCoordinator {
     init(
         settings: AppSettings = AppSettings(),
         wifiMonitor: WiFiMonitor = WiFiMonitor(),
-        castManager: CastManager = CastManager()
+        castManager: CastManager = CastManager(),
+        isDemoMode: Bool = false
     ) {
         self.settings = settings
         self.wifiMonitor = wifiMonitor
@@ -38,6 +39,11 @@ final class AppCoordinator {
         self.webController = webCtrl
         self.homeManager = GoogleHomeManager(webController: webCtrl)
         self.selectedTab = settings.defaultTab
+
+        if isDemoMode {
+            homeManager.loadDemoHome()
+            return
+        }
 
         wifiMonitor.onWiFiBecameAvailable = { [weak self] in
             self?.handleNetworkChanged()
@@ -56,7 +62,10 @@ final class AppCoordinator {
     }
 
     var accessEvaluation: AccessEvaluation {
-        WiFiAccessEvaluator.evaluate(
+        if homeManager.isDemoMode {
+            return .allowed(reason: "Demo Mode")
+        }
+        return WiFiAccessEvaluator.evaluate(
             mode: settings.wifiGatingMode,
             snapshot: wifiMonitor.snapshot,
             savedHomeSSIDs: settings.savedHomeSSIDs,
@@ -124,6 +133,13 @@ final class AppCoordinator {
         homeManager.resetForSignOut()
         webController.clearSessionAndSignOut()
         selectedTab = .home
+        detachedWindowMode = .devices
+    }
+
+    func startSignIn() {
+        selectedTab = .home
+        detachedWindowMode = .devices
+        webController.beginInteractiveSignIn()
     }
 
     func saveCurrentAsHomeNetwork() {
