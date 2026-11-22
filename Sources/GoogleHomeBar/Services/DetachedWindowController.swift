@@ -28,6 +28,9 @@ final class DetachedWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         win.title = "Google Home"
+        win.titlebarAppearsTransparent = true
+        win.isOpaque = false
+        win.backgroundColor = .clear
         win.contentViewController = hosting
         win.setContentSize(NSSize(width: 1020, height: 700))
         win.minSize = NSSize(width: 720, height: 500)

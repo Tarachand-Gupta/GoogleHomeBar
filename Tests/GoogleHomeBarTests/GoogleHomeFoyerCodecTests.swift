@@ -21,9 +21,9 @@ struct GoogleHomeFoyerCodecTests {
           ["home-1","Home",[],[["user@example.com"]],null,[
             ["room-bed",null,"Bedroom ",["BEDROOM"],[[["dev-fan"]], [["dev-ac"]], [["dev-bulb"]]]]
           ],[
-            [["dev-fan",["src","1"]],null,null,"Tara bedroom fan",null,"action.devices.types.FAN",["action.devices.traits.OnOff","action.devices.traits.FanSpeed","action.devices.traits.Toggles"],null,null,null,null,null,null,null,null,null,["Atomberg","Atomberg Smart Fan"]],
-            [["dev-ac",["src","2"]],null,null,"Tara AC",null,"action.devices.types.AC_UNIT",["action.devices.traits.OnOff","action.devices.traits.TemperatureSetting","action.devices.traits.FanSpeed"],null,null,null,null,null,null,null,null,null,["PANASONIC","CS-CU"]],
-            [["dev-bulb",["src","3"]],null,null,"Wipro RGBCW 9W Bulb",null,"action.devices.types.LIGHT",["action.devices.traits.Brightness","action.devices.traits.ColorSetting","action.devices.traits.OnOff","action.devices.traits.Modes"]],
+            [["dev-fan",["src","1"]],null,null,"Bedroom Smart Fan",null,"action.devices.types.FAN",["action.devices.traits.OnOff","action.devices.traits.FanSpeed","action.devices.traits.Toggles"],null,null,null,null,null,null,null,null,null,["SmartFanCo","Smart Fan Pro"]],
+            [["dev-ac",["src","2"]],null,null,"Living Room AC",null,"action.devices.types.AC_UNIT",["action.devices.traits.OnOff","action.devices.traits.TemperatureSetting","action.devices.traits.FanSpeed"],null,null,null,null,null,null,null,null,null,["PANASONIC","CS-CU"]],
+            [["dev-bulb",["src","3"]],null,null,"Desk RGBCW Bulb",null,"action.devices.types.LIGHT",["action.devices.traits.Brightness","action.devices.traits.ColorSetting","action.devices.traits.OnOff","action.devices.traits.Modes"]],
             [["group-1"],null,null,"Bedroom Lights",null,"action.devices.types.DEVICE_GROUP",["action.devices.traits.OnOff"]]
           ]]
         ]]
@@ -168,5 +168,94 @@ struct GoogleHomeFoyerCodecTests {
 
         let getReq = GoogleHomeFoyerCodec.buildGetTraitsBody(deviceIds: ["d1", "d2"])
         #expect(getReq == #"[[["d1"],["d2"]]]"#)
+    }
+
+    @Test("Correctly distinguishes tunable-white-only lights and parses generic traits (volume, humidity, fan %, startStop)")
+    func parseGenericAndAuthoritativeTraits() throws {
+        // Tunable white bulb: HomeGraph declares ColorSetting, then GetTraits confirms colorTemperatureRange only (no RGB)
+        let hgJson = """
+        ["1",[
+          ["h1","Home",[],[],null,[],[
+            [["d-white"],null,null,"Desk Lamp",null,"action.devices.types.LIGHT",["action.devices.traits.OnOff","action.devices.traits.Brightness","action.devices.traits.ColorSetting"]],
+            [["d-hum"],null,null,"Humidifier",null,"action.devices.types.HUMIDIFIER",["action.devices.traits.OnOff","action.devices.traits.HumiditySetting","action.devices.traits.FanSpeed"]],
+            [["d-vac"],null,null,"Robot Vacuum",null,"action.devices.types.VACUUM",["action.devices.traits.StartStop"]],
+            [["d-tv"],null,null,"Living Room TV",null,"action.devices.types.TV",["action.devices.traits.OnOff","action.devices.traits.Volume"]]
+          ]]
+        ]]
+        """
+        let (_, initialDevices) = GoogleHomeFoyerCodec.parseHomeGraph(jsonData: Data(hgJson.utf8))
+        #expect(initialDevices.count == 4)
+        #expect(initialDevices[1].deviceType == .humidifier)
+        #expect(initialDevices[2].deviceType == .vacuum)
+        #expect(initialDevices[3].deviceType == .tv)
+
+        let traitPayload: [Any] = [[
+            [["d-white"], [
+                [
+                    "color",
+                    [["colorTemperature", vNum(3000)]],
+                    [[["colorTemperatureRange", vStruct([("temperatureMinK", vNum(2700)), ("temperatureMaxK", vNum(6500))])]]],
+                ],
+            ]],
+            [["d-hum"], [
+                [
+                    "humiditySetting",
+                    [["humiditySetpointPercent", vNum(55)], ["humidityAmbientPercent", vNum(42)]],
+                    [[["humiditySetpointRange", vStruct([("minPercent", vNum(30)), ("maxPercent", vNum(70))])]]],
+                ],
+                [
+                    "fanSpeed",
+                    [["currentFanSpeedPercent", vNum(60)]],
+                    [[["supportsFanSpeedPercent", vBool(true)]]],
+                ],
+            ]],
+            [["d-vac"], [
+                [
+                    "startStop",
+                    [["isRunning", vBool(true)], ["isPaused", vBool(false)]],
+                    [[["pausable", vBool(true)]]],
+                ],
+            ]],
+            [["d-tv"], [
+                ["volume", [["currentVolume", vNum(35)], ["isMuted", vBool(false)]]],
+            ]],
+        ]]
+
+        let data = try JSONSerialization.data(withJSONObject: traitPayload)
+        let parsed = GoogleHomeFoyerCodec.parseTraitsResponse(jsonData: data)
+
+        var whiteLamp = initialDevices[0]
+        whiteLamp.state.merge(from: try #require(parsed["d-white"]))
+        #expect(whiteLamp.state.supportsColorTemp == true)
+        #expect(whiteLamp.state.supportsRGBColor == false)
+
+        let hum = try #require(parsed["d-hum"])
+        #expect(hum.humiditySetpointPercent == 55)
+        #expect(hum.humidityAmbientPercent == 42)
+        #expect(hum.minHumidityPercent == 30)
+        #expect(hum.maxHumidityPercent == 70)
+        #expect(hum.currentFanSpeedPercent == 60)
+        #expect(hum.supportsFanSpeedPercent == true)
+
+        let vac = try #require(parsed["d-vac"])
+        #expect(vac.isRunning == true)
+        #expect(vac.isPaused == false)
+        #expect(vac.isPausable == true)
+
+        let tv = try #require(parsed["d-tv"])
+        #expect(tv.volumePercent == 35)
+        #expect(tv.isMuted == false)
+
+        let volPayload = GoogleHomeFoyerCodec.buildUpdateTraitsBody(deviceId: "d-tv", updates: [.volume(45)])
+        #expect(volPayload == #"[[[["d-tv"],[["volume",[["currentVolume",[null,45]]]]]]]]"#)
+
+        let humPayload = GoogleHomeFoyerCodec.buildUpdateTraitsBody(deviceId: "d-hum", updates: [.humiditySetpoint(50)])
+        #expect(humPayload == #"[[[["d-hum"],[["humiditySetting",[["humiditySetpointPercent",[null,50]]]]]]]]"#)
+
+        let fanPctPayload = GoogleHomeFoyerCodec.buildUpdateTraitsBody(deviceId: "d-hum", updates: [.fanSpeedPercent(75)])
+        #expect(fanPctPayload == #"[[[["d-hum"],[["fanSpeed",[["currentFanSpeedPercent",[null,75]]]]]]]]"#)
+
+        let startPayload = GoogleHomeFoyerCodec.buildUpdateTraitsBody(deviceId: "d-vac", updates: [.startStop(start: true)])
+        #expect(startPayload == #"[[[["d-vac"],[["startStop",[["isRunning",[null,null,null,1]]]]]]]]"#)
     }
 }

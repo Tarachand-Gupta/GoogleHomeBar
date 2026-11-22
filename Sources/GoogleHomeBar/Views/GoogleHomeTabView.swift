@@ -1,4 +1,5 @@
 import AppKit
+import GoogleHomeBarCore
 import SwiftUI
 
 struct GoogleHomeTabView: View {
@@ -30,8 +31,10 @@ struct GoogleHomeTabView: View {
 
                 PersistentWebViewHost(
                     webView: coordinator.webController.webView,
-                    zoom: coordinator.settings.webPageZoom
+                    zoom: coordinator.settings.webPageZoom,
+                    priority: isDetachedHost ? .visibleDetachedWindow : .visiblePopover
                 )
+                .transaction { $0.animation = nil }
                 .onAppear {
                     coordinator.webController.loadIfNeeded()
                 }
@@ -63,6 +66,7 @@ struct GoogleHomeTabView: View {
                         ? Color.accentColor
                         : Color.secondary
                 )
+                .contentShape(RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
             .help("Go to home.google.com")
@@ -81,6 +85,8 @@ struct GoogleHomeTabView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 11, weight: .medium))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .disabled(!coordinator.webController.canGoBack)
@@ -92,6 +98,8 @@ struct GoogleHomeTabView: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .medium))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .disabled(!coordinator.webController.canGoForward)
@@ -109,6 +117,8 @@ struct GoogleHomeTabView: View {
                 } label: {
                     Image(systemName: "minus.magnifyingglass")
                         .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Zoom Out")
@@ -126,16 +136,36 @@ struct GoogleHomeTabView: View {
                 } label: {
                     Image(systemName: "plus.magnifyingglass")
                         .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Zoom In")
                 .help("Zoom In")
+
+                Divider()
+                    .frame(height: 12)
+                    .padding(.horizontal, 2)
+
+                Button {
+                    coordinator.webController.reload()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Reload")
+                .help("Reload Page")
 
                 Button {
                     coordinator.webController.openInDefaultBrowser()
                 } label: {
                     Image(systemName: "safari")
                         .font(.system(size: 11))
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Open in Browser")

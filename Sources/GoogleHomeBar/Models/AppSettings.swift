@@ -1,7 +1,70 @@
+import AppKit
 import Foundation
 import Observation
 import ServiceManagement
+import SwiftUI
 import GoogleHomeBarCore
+
+enum UIStylePreset: String, CaseIterable, Identifiable {
+    case modern
+    case classic
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .modern: return "Modern"
+        case .classic: return "Classic"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .modern: return "Rotary dial controls, climate hero card, room filter pills, and floating navigation."
+        case .classic: return "Compact two-column tile grid with linear sliders and top tab bar."
+        }
+    }
+}
+
+enum AppAppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
 
 enum AppTab: String, CaseIterable, Identifiable {
     case home
@@ -68,6 +131,16 @@ final class AppSettings {
         static let popoverSize = "popoverSizePreset"
         static let webZoom = "webPageZoom"
         static let defaultTab = "defaultTab"
+        static let uiStyle = "uiExperienceStyle"
+        static let appearanceMode = "appAppearanceMode"
+    }
+
+    var uiStyle: UIStylePreset {
+        didSet { defaults.set(uiStyle.rawValue, forKey: Keys.uiStyle) }
+    }
+
+    var appearanceMode: AppAppearanceMode {
+        didSet { defaults.set(appearanceMode.rawValue, forKey: Keys.appearanceMode) }
     }
 
     var wifiGatingMode: WiFiGatingMode {
@@ -110,6 +183,10 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.uiStyle = defaults.string(forKey: Keys.uiStyle)
+            .flatMap(UIStylePreset.init(rawValue:)) ?? .modern
+        self.appearanceMode = defaults.string(forKey: Keys.appearanceMode)
+            .flatMap(AppAppearanceMode.init(rawValue:)) ?? .system
         self.wifiGatingMode = defaults.string(forKey: Keys.wifiMode)
             .flatMap(WiFiGatingMode.init(rawValue:)) ?? .alwaysActive
         self.savedHomeSSIDs = defaults.stringArray(forKey: Keys.homeSSIDs) ?? []

@@ -4,9 +4,35 @@ import GoogleHomeBarCore
 
 struct CastDevicesView: View {
     @Bindable var coordinator: AppCoordinator
+    var bottomInsetForDock: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var isModern: Bool {
+        coordinator.settings.uiStyle == .modern
+    }
 
     var body: some View {
+        let palette = ModernPalette(colorScheme: colorScheme)
+
         VStack(spacing: 0) {
+            if isModern {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Cast & Media")
+                            .font(.system(size: 19, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.textPrimary)
+                        Text("Local speakers, Nest Hubs, and TVs on your Wi-Fi")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+            }
+
             if !coordinator.castManager.devices.isEmpty {
                 quickActionsBar
                 Divider()
@@ -18,13 +44,16 @@ struct CastDevicesView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(coordinator.castManager.devices) { device in
-                            CastDeviceCardView(device: device)
+                            CastDeviceCardView(device: device, useModernSurface: isModern)
                         }
                     }
-                    .padding(12)
+                    .padding(.horizontal, isModern ? 16 : 12)
+                    .padding(.top, 12)
+                    .padding(.bottom, bottomInsetForDock ? 78 : 14)
                 }
             }
         }
+        .background(isModern ? palette.canvas : Color.clear)
         .onAppear {
             coordinator.castManager.startBrowsing()
         }
@@ -144,8 +173,14 @@ struct CastDevicesView: View {
 
 struct CastDeviceCardView: View {
     @Bindable var device: CastDevice
+    var useModernSurface: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let palette = ModernPalette(colorScheme: colorScheme)
+        let radius: CGFloat = useModernSurface ? 16 : 10
+
         VStack(alignment: .leading, spacing: 10) {
             topRow
 
@@ -157,14 +192,14 @@ struct CastDeviceCardView: View {
 
             volumeRow
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(
-                    device.isPlayingMedia ? Color.accentColor.opacity(0.35) : Color.primary.opacity(0.08),
-                    lineWidth: 1
-                )
+        .padding(13)
+        .modifier(
+            AdaptiveCastCardSurface(
+                useModernSurface: useModernSurface,
+                radius: radius,
+                isPlaying: device.isPlayingMedia,
+                palette: palette
+            )
         )
         .contextMenu {
             Button("Refresh Status") {
@@ -415,6 +450,35 @@ struct CastDeviceCardView: View {
             return "speaker.wave.2.fill"
         } else {
             return "speaker.wave.3.fill"
+        }
+    }
+}
+
+private struct AdaptiveCastCardSurface: ViewModifier {
+    let useModernSurface: Bool
+    let radius: CGFloat
+    let isPlaying: Bool
+    let palette: ModernPalette
+
+    func body(content: Content) -> some View {
+        if useModernSurface {
+            content
+                .background(palette.card, in: RoundedRectangle(cornerRadius: radius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius)
+                        .strokeBorder(
+                            isPlaying ? AnyShapeStyle(palette.accent.opacity(0.45)) : AnyShapeStyle(palette.glassRimHighlight),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: palette.cardShadow, radius: 8, y: 3)
+        } else {
+            content
+                .liquidGlassSurface(
+                    in: RoundedRectangle(cornerRadius: 14),
+                    tint: isPlaying ? Color.accentColor.opacity(0.22) : nil,
+                    shadowRadius: 5
+                )
         }
     }
 }

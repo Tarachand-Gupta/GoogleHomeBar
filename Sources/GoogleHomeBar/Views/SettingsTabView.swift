@@ -6,27 +6,98 @@ import GoogleHomeBarCore
 struct SettingsTabView: View {
     @Bindable var coordinator: AppCoordinator
     @Bindable var settings: AppSettings
+    var bottomInsetForDock: Bool = false
+
+    @Environment(\.colorScheme) private var colorScheme
     @State private var newSSIDText = ""
     @State private var showSignOutConfirm = false
 
-    init(coordinator: AppCoordinator) {
+    init(coordinator: AppCoordinator, bottomInsetForDock: Bool = false) {
         self.coordinator = coordinator
         self.settings = coordinator.settings
+        self.bottomInsetForDock = bottomInsetForDock
+    }
+
+    private var isModern: Bool {
+        settings.uiStyle == .modern
     }
 
     var body: some View {
+        let palette = ModernPalette(colorScheme: colorScheme)
+
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                wifiSection
-                appearanceSection
-                systemSection
+                if isModern {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Settings")
+                                .font(.system(size: 19, weight: .bold, design: .rounded))
+                                .foregroundStyle(palette.textPrimary)
+                            Text("Switch UX style, Light/Dark theme, and network rules")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.bottom, 2)
+                }
+
+                interfaceThemeSection(palette: palette)
+                wifiSection(palette: palette)
+                appearanceSection(palette: palette)
+                systemSection(palette: palette)
             }
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+            .padding(.bottom, bottomInsetForDock ? 78 : 16)
+        }
+        .background(isModern ? palette.canvas : Color.clear)
+    }
+
+    // MARK: - Interface Style (Modern / Classic) & Theme (System / Light / Dark)
+
+    private func interfaceThemeSection(palette: ModernPalette) -> some View {
+        settingsCard(title: "Interface & Theme", icon: "paintbrush.pointed.fill", palette: palette) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Control Experience")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Picker("Control Experience", selection: $settings.uiStyle) {
+                    ForEach(UIStylePreset.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Text(settings.uiStyle.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Appearance")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Picker("Appearance", selection: $settings.appearanceMode) {
+                    ForEach(AppAppearanceMode.allCases) { mode in
+                        Label(mode.title, systemImage: mode.icon).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
         }
     }
 
-    private var wifiSection: some View {
-        settingsCard(title: "Wi-Fi & Home Network", icon: "wifi") {
+    // MARK: - Network & Home Wi-Fi
+
+    private func wifiSection(palette: ModernPalette) -> some View {
+        settingsCard(title: "Internet & Home Network", icon: "wifi", palette: palette) {
             Picker("Activation", selection: $settings.wifiGatingMode) {
                 ForEach(WiFiGatingMode.allCases) { mode in
                     Text(mode.title).tag(mode)
@@ -146,8 +217,10 @@ struct SettingsTabView: View {
         }
     }
 
-    private var appearanceSection: some View {
-        settingsCard(title: "Menu Bar & Web View", icon: "macwindow") {
+    // MARK: - Menu Bar & Web View
+
+    private func appearanceSection(palette: ModernPalette) -> some View {
+        settingsCard(title: "Menu Bar & Web View", icon: "macwindow", palette: palette) {
             HStack {
                 Text("Popover Size")
                     .font(.caption)
@@ -201,8 +274,10 @@ struct SettingsTabView: View {
         }
     }
 
-    private var systemSection: some View {
-        settingsCard(title: "System & Google Account", icon: "gearshape") {
+    // MARK: - System & Google Account
+
+    private func systemSection(palette: ModernPalette) -> some View {
+        settingsCard(title: "System & Google Account", icon: "gearshape", palette: palette) {
             Toggle(
                 "Launch GoogleHomeBar at Login",
                 isOn: Binding(
@@ -275,23 +350,42 @@ struct SettingsTabView: View {
     private func settingsCard<Content: View>(
         title: String,
         icon: String,
+        palette: ModernPalette,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let radius: CGFloat = isModern ? 16 : 14
+        return VStack(alignment: .leading, spacing: 10) {
             Label(title, systemImage: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(isModern ? palette.textPrimary : .primary)
 
             VStack(alignment: .leading, spacing: 8) {
                 content()
             }
         }
-        .padding(12)
+        .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .modifier(AdaptiveSettingsCardSurface(isModern: isModern, radius: radius, palette: palette))
+    }
+}
+
+private struct AdaptiveSettingsCardSurface: ViewModifier {
+    let isModern: Bool
+    let radius: CGFloat
+    let palette: ModernPalette
+
+    func body(content: Content) -> some View {
+        if isModern {
+            content
+                .background(palette.card, in: RoundedRectangle(cornerRadius: radius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: radius)
+                        .strokeBorder(palette.glassRimHighlight, lineWidth: 1)
+                )
+                .shadow(color: palette.cardShadow, radius: 8, y: 3)
+        } else {
+            content
+                .liquidGlassSurface(in: RoundedRectangle(cornerRadius: radius), shadowRadius: 5)
+        }
     }
 }

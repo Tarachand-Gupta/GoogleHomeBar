@@ -20,15 +20,42 @@ struct GoogleHomeDashboardView: View {
                 signInPromptView
             } else if coordinator.homeManager.devices.isEmpty {
                 loadingDevicesView
-            } else if externalSelection == nil,
-                      let devId = inlineSelectedDeviceId,
-                      let device = coordinator.homeManager.device(id: devId) {
-                GoogleHomeDeviceDetailView(
-                    device: device,
-                    homeManager: coordinator.homeManager,
-                    showBackButton: true,
-                    onBack: { inlineSelectedDeviceId = nil }
-                )
+            } else if externalSelection == nil {
+                let expandedDevice = inlineSelectedDeviceId.flatMap { coordinator.homeManager.device(id: $0) }
+                let isExpanded = expandedDevice != nil
+
+                ZStack {
+                    deviceGridDashboard
+                        .scaleEffect(isExpanded ? 0.93 : 1.0)
+                        .opacity(isExpanded ? 0.0 : 1.0)
+                        .allowsHitTesting(!isExpanded)
+                        .accessibilityHidden(isExpanded)
+
+                    if let device = expandedDevice {
+                        GoogleHomeDeviceDetailView(
+                            device: device,
+                            homeManager: coordinator.homeManager,
+                            showBackButton: true,
+                            onBack: {
+                                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                                    inlineSelectedDeviceId = nil
+                                }
+                            }
+                        )
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.86, anchor: .center)
+                                    .combined(with: .opacity)
+                                    .combined(with: .offset(y: 14)),
+                                removal: .scale(scale: 0.88, anchor: .center)
+                                    .combined(with: .opacity)
+                                    .combined(with: .offset(y: 10))
+                            )
+                        )
+                        .zIndex(1)
+                    }
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: inlineSelectedDeviceId != nil)
             } else {
                 deviceGridDashboard
             }
@@ -164,7 +191,7 @@ struct GoogleHomeDashboardView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "hand.tap")
                             .font(.caption2)
-                        Text("Click a tile to toggle · Hold (or click sliders) for full controls")
+                        Text("Click a card for full controls · Use the power icon to toggle on/off")
                             .font(.caption2)
                     }
                     .foregroundStyle(.tertiary)
@@ -224,11 +251,13 @@ struct GoogleHomeDashboardView: View {
 
     private func openDetails(for device: GoogleHomeDevice) {
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-        activeSelection.wrappedValue = device.id
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            activeSelection.wrappedValue = device.id
+        }
     }
 }
 
-// MARK: - Tactile Device Tile (Click to Toggle, Click-and-Hold or Sliders Button for Full Controls)
+// MARK: - Native macOS Liquid Glass Device Tile (Click Card to Expand; Power Button Toggles)
 
 struct GoogleHomeDeviceTile: View {
     let device: GoogleHomeDevice
@@ -236,10 +265,6 @@ struct GoogleHomeDeviceTile: View {
     let isSelected: Bool
     let onTapToggle: () -> Void
     let onOpenControls: () -> Void
-
-    @State private var isPressing = false
-    @State private var holdTriggered = false
-    @State private var holdTask: Task<Void, Never>?
 
     private var isOn: Bool {
         device.state.isOnline && (device.state.isOn == true)
@@ -250,12 +275,12 @@ struct GoogleHomeDeviceTile: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        Button(action: onOpenControls) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
                     ZStack {
                         Circle()
-                            .fill(isOn ? accentColor.opacity(0.28) : Color.primary.opacity(0.08))
+                            .fill(isOn ? accentColor.opacity(0.24) : Color.primary.opacity(0.08))
                             .frame(width: 34, height: 34)
                         Image(systemName: isOn ? device.deviceType.sfSymbol : device.deviceType.offSymbol)
                             .font(.system(size: 15, weight: .semibold))
@@ -267,7 +292,7 @@ struct GoogleHomeDeviceTile: View {
                     if isPending {
                         ProgressView()
                             .controlSize(.mini)
-                            .padding(.trailing, 24)
+                            .padding(.trailing, 28)
                     }
                 }
 
@@ -298,112 +323,61 @@ struct GoogleHomeDeviceTile: View {
                 }
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
-            .background(tileBackground, in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+            .liquidGlassSurface(
+                in: RoundedRectangle(cornerRadius: 16),
+                tint: isOn ? accentColor.opacity(0.24) : nil,
+                interactive: true,
+                shadowRadius: isOn ? 8 : 4
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(tileBorderColor, lineWidth: isSelected ? 1.8 : 1)
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: isSelected ? 1.8 : 0)
             )
-            .opacity(device.state.isOnline ? 1.0 : 0.6)
-            .scaleEffect(isPressing ? 0.965 : 1.0)
-            .animation(.easeOut(duration: 0.14), value: isPressing)
-            .contentShape(RoundedRectangle(cornerRadius: 14))
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        let movedTooFar = abs(value.translation.width) > 12 || abs(value.translation.height) > 12
-                        if movedTooFar {
-                            cancelHoldTimer()
-                            isPressing = false
-                            return
-                        }
-                        if !isPressing && !holdTriggered {
-                            isPressing = true
-                            startHoldTimer()
-                        }
-                    }
-                    .onEnded { value in
-                        let movedTooFar = abs(value.translation.width) > 12 || abs(value.translation.height) > 12
-                        cancelHoldTimer()
-                        let didHold = holdTriggered
-                        isPressing = false
-                        holdTriggered = false
-                        if !didHold && !movedTooFar {
-                            onTapToggle()
-                        }
-                    }
-            )
-            .contextMenu {
-                Button("Open Full Controls") {
-                    onOpenControls()
-                }
-                if device.state.isOnline && device.supportsOnOff {
-                    Button(isOn ? "Turn Off" : "Turn On") {
-                        onTapToggle()
-                    }
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(device.name), \(device.statusSummary)")
-            .accessibilityHint("Click to toggle power, or hold for full controls")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction {
-                onTapToggle()
-            }
-
-            // Dedicated quick-open Full Controls button in top-right corner
-            Button {
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(LiquidGlassPressStyle(shape: RoundedRectangle(cornerRadius: 16), pressScale: 0.96, flashOpacity: 0.16))
+        .contextMenu {
+            Button("Open Full Controls") {
                 onOpenControls()
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isOn ? accentColor : Color.secondary)
-                    .frame(width: 24, height: 24)
-                    .background(Color.primary.opacity(0.08), in: Circle())
             }
-            .buttonStyle(.plain)
-            .padding(9)
-            .accessibilityLabel("Full controls for \(device.name)")
-            .help("Open full controls (or press & hold tile)")
+            if device.state.isOnline && device.supportsOnOff {
+                Button(isOn ? "Turn Off" : "Turn On") {
+                    onTapToggle()
+                }
+            }
         }
-    }
-
-    private var tileBackground: some ShapeStyle {
-        if isOn {
-            return AnyShapeStyle(
-                LinearGradient(
-                    colors: [
-                        accentColor.opacity(0.22),
-                        accentColor.opacity(0.10),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+        .accessibilityLabel("\(device.name), \(device.statusSummary)")
+        .accessibilityHint("Click to open full controls")
+        .overlay(alignment: .topTrailing) {
+            if device.supportsOnOff {
+                Button {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                    onTapToggle()
+                } label: {
+                    Image(systemName: "power")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(isOn ? Color.white : Color.secondary)
+                        .frame(width: 26, height: 26)
+                        .background {
+                            if isOn {
+                                Circle().fill(accentColor)
+                            }
+                        }
+                        .liquidGlassSurface(
+                            in: Circle(),
+                            tint: isOn ? accentColor : nil,
+                            interactive: true
+                        )
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.liquidGlassCircle)
+                .disabled(!device.state.isOnline)
+                .padding(9)
+                .accessibilityLabel("Toggle \(device.name)")
+                .help(isOn ? "Turn Off" : "Turn On")
+            }
         }
-        return AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
-    }
-
-    private var tileBorderColor: Color {
-        if isSelected {
-            return Color.accentColor
-        }
-        return isOn ? accentColor.opacity(0.45) : Color.primary.opacity(0.09)
-    }
-
-    private func startHoldTimer() {
-        holdTask?.cancel()
-        holdTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 360_000_000)
-            guard !Task.isCancelled, isPressing else { return }
-            holdTriggered = true
-            isPressing = false
-            onOpenControls()
-        }
-    }
-
-    private func cancelHoldTimer() {
-        holdTask?.cancel()
-        holdTask = nil
+        .opacity(device.state.isOnline ? 1.0 : 0.6)
     }
 }

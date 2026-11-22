@@ -6,6 +6,7 @@ enum DetachedWindowMode: String, CaseIterable, Identifiable {
     case devices = "Devices"
     case cast = "Cast"
     case web = "Google Home Web"
+    case settings = "Settings"
 
     var id: String { rawValue }
 }

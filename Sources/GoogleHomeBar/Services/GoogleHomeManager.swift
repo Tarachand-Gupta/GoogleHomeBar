@@ -20,6 +20,7 @@ final class GoogleHomeManager {
     var devices: [GoogleHomeDevice] = []
     var pendingDeviceIds: Set<String> = []
     var isRefreshing = false
+    var isDemoMode = false
     var lastUpdated: Date?
     var lastError: String?
 
@@ -121,6 +122,7 @@ final class GoogleHomeManager {
     // MARK: - Refresh HomeGraph & Traits
 
     func refreshAll() async {
+        if isDemoMode { return }
         lastError = nil
         isRefreshing = true
         defer { isRefreshing = false }
@@ -139,21 +141,39 @@ final class GoogleHomeManager {
     }
 
     func refreshTraits(for deviceIds: [String]? = nil, silent: Bool = false) async {
+        if isDemoMode { return }
         let targets = deviceIds ?? devices.map(\.id)
         guard !targets.isEmpty else { return }
 
         if !silent { isRefreshing = true }
         defer { if !silent { isRefreshing = false } }
 
-        let reqBody = GoogleHomeFoyerCodec.buildGetTraitsBody(deviceIds: targets)
-        let res = await webController.callFoyerRPC(
-            path: "google.internal.home.foyer.v1.HomeControlService/GetTraits",
-            bodyJSON: reqBody
-        )
-        if res.ok, let data = res.body.data(using: .utf8) {
-            handleTraits(data)
+        // Chunk large homes (100+ devices) so each GetTraits RPC stays fast and within payload limits.
+        let chunkSize = 40
+        var firstError: String?
+        var anySucceeded = false
+
+        var index = 0
+        while index < targets.count {
+            let end = min(index + chunkSize, targets.count)
+            let batch = Array(targets[index..<end])
+            let reqBody = GoogleHomeFoyerCodec.buildGetTraitsBody(deviceIds: batch)
+            let res = await webController.callFoyerRPC(
+                path: "google.internal.home.foyer.v1.HomeControlService/GetTraits",
+                bodyJSON: reqBody
+            )
+            if res.ok, let data = res.body.data(using: .utf8) {
+                handleTraits(data)
+                anySucceeded = true
+            } else if firstError == nil {
+                firstError = res.error
+            }
+            index = end
+        }
+
+        if anySucceeded && firstError == nil {
             lastError = nil
-        } else if !silent, let err = res.error {
+        } else if !silent, let err = firstError {
             lastError = err
         }
     }
@@ -211,12 +231,13 @@ final class GoogleHomeManager {
     }
 
     func setThermostatMode(deviceId: String, mode: String) {
+        let wasOn = device(id: deviceId)?.state.isOn == true
         mutateDevice(id: deviceId) {
             $0.state.isOn = (mode.lowercased() != "off")
             $0.state.thermostatMode = mode
         }
         var updates: [GoogleHomeTraitUpdate] = [.thermostat(mode: mode, setpointC: nil)]
-        if mode.lowercased() != "off" && device(id: deviceId)?.state.isOn != true {
+        if mode.lowercased() != "off" && !wasOn {
             updates.insert(.onOff(true), at: 0)
         }
         sendUpdate(deviceId: deviceId, updates: updates, debounceKey: nil)
@@ -242,6 +263,46 @@ final class GoogleHomeManager {
             $0.state.currentFanSpeed = speedName
         }
         sendUpdate(deviceId: deviceId, updates: [.fanSpeed(speedName)], debounceKey: nil)
+    }
+
+    func setFanSpeedPercent(deviceId: String, percent: Int, debounced: Bool = true) {
+        let clamped = min(max(percent, 0), 100)
+        mutateDevice(id: deviceId) {
+            $0.state.isOn = clamped > 0
+            $0.state.currentFanSpeedPercent = clamped
+        }
+        sendUpdate(
+            deviceId: deviceId,
+            updates: [.fanSpeedPercent(clamped)],
+            debounceKey: debounced ? "\(deviceId).fanPct" : nil
+        )
+    }
+
+    func setHumiditySetpoint(deviceId: String, percent: Int, debounced: Bool = true) {
+        let clamped = min(max(percent, 0), 100)
+        mutateDevice(id: deviceId) {
+            $0.state.humiditySetpointPercent = clamped
+        }
+        sendUpdate(
+            deviceId: deviceId,
+            updates: [.humiditySetpoint(clamped)],
+            debounceKey: debounced ? "\(deviceId).humidity" : nil
+        )
+    }
+
+    func setRunning(deviceId: String, running: Bool) {
+        mutateDevice(id: deviceId) {
+            $0.state.isRunning = running
+            if !running { $0.state.isPaused = false }
+        }
+        sendUpdate(deviceId: deviceId, updates: [.startStop(start: running)], debounceKey: nil)
+    }
+
+    func setPaused(deviceId: String, paused: Bool) {
+        mutateDevice(id: deviceId) {
+            $0.state.isPaused = paused
+        }
+        sendUpdate(deviceId: deviceId, updates: [.pauseUnpause(pause: paused)], debounceKey: nil)
     }
 
     func setMode(deviceId: String, modeName: String, settingName: String) {
@@ -272,6 +333,24 @@ final class GoogleHomeManager {
         )
     }
 
+    func setVolume(deviceId: String, percent: Int, debounced: Bool = true) {
+        let clamped = min(max(percent, 0), 100)
+        mutateDevice(id: deviceId) {
+            $0.state.volumePercent = clamped
+            if clamped > 0 { $0.state.isMuted = false }
+        }
+        sendUpdate(
+            deviceId: deviceId,
+            updates: [.volume(clamped)],
+            debounceKey: debounced ? "\(deviceId).volume" : nil
+        )
+    }
+
+    func setMuted(deviceId: String, muted: Bool) {
+        mutateDevice(id: deviceId) { $0.state.isMuted = muted }
+        sendUpdate(deviceId: deviceId, updates: [.mute(muted)], debounceKey: nil)
+    }
+
     func setLocked(deviceId: String, locked: Bool) {
         mutateDevice(id: deviceId) { $0.state.isLocked = locked }
         sendUpdate(deviceId: deviceId, updates: [.lock(locked)], debounceKey: nil)
@@ -284,6 +363,7 @@ final class GoogleHomeManager {
         updates: [GoogleHomeTraitUpdate],
         debounceKey: String?
     ) {
+        if isDemoMode { return }
         let taskKey = debounceKey ?? "\(deviceId).immediate.\(UUID().uuidString)"
         if let debounceKey {
             debounceTasks[debounceKey]?.cancel()
@@ -338,6 +418,7 @@ final class GoogleHomeManager {
     }
 
     private func handleHomeGraph(_ data: Data) {
+        if isDemoMode { return }
         let parsed = GoogleHomeFoyerCodec.parseHomeGraph(jsonData: data)
         guard !parsed.structures.isEmpty else { return }
 
@@ -364,6 +445,7 @@ final class GoogleHomeManager {
     }
 
     private func handleTraits(_ data: Data) {
+        if isDemoMode { return }
         let updates = GoogleHomeFoyerCodec.parseTraitsResponse(jsonData: data)
         guard !updates.isEmpty else { return }
 
@@ -384,5 +466,188 @@ final class GoogleHomeManager {
         var copy = devices[idx]
         transform(&copy)
         devices[idx] = copy
+    }
+
+    /// Loads a self-contained sample smart home (triggered only by `--demo`) for previewing UI and screenshots.
+    func loadDemoHome() {
+        isDemoMode = true
+        stopPolling()
+
+        let homeId = "demo-home-1"
+        let livingRoom = GoogleHomeRoom(id: "room-living", name: "Living Room", deviceIds: ["demo-ac", "demo-lamp", "demo-blinds"])
+        let bedroom = GoogleHomeRoom(id: "room-bed", name: "Bedroom", deviceIds: ["demo-fan", "demo-bedside"])
+        let office = GoogleHomeRoom(id: "room-office", name: "Office", deviceIds: ["demo-plug"])
+        structures = [GoogleHomeStructure(id: homeId, name: "Home", rooms: [livingRoom, bedroom, office])]
+        selectedStructureId = homeId
+
+        var acState = GoogleHomeTraitState()
+        acState.isOnline = true
+        acState.isOn = true
+        acState.ambientTempC = 26
+        acState.targetTempC = 23
+        acState.minTempC = 16
+        acState.maxTempC = 30
+        acState.temperatureUnit = "C"
+        acState.thermostatMode = "cool"
+        acState.availableThermostatModes = ["auto", "cool", "dry", "fan-only"]
+        acState.currentFanSpeed = "medium"
+        acState.availableFanSpeeds = [
+            GoogleHomeFanSpeedOption(speedName: "auto", displayLabel: "Auto"),
+            GoogleHomeFanSpeedOption(speedName: "quiet", displayLabel: "Quiet"),
+            GoogleHomeFanSpeedOption(speedName: "low", displayLabel: "Low"),
+            GoogleHomeFanSpeedOption(speedName: "medium", displayLabel: "Medium"),
+            GoogleHomeFanSpeedOption(speedName: "high", displayLabel: "High"),
+        ]
+        acState.modes = [
+            GoogleHomeModeOption(
+                modeName: "powerful",
+                displayName: "Powerful",
+                settings: [
+                    GoogleHomeModeSettingOption(settingName: "on", displayLabel: "Enable"),
+                    GoogleHomeModeSettingOption(settingName: "off", displayLabel: "Disable"),
+                ],
+                currentSetting: "off"
+            ),
+        ]
+
+        var lampState = GoogleHomeTraitState()
+        lampState.isOnline = true
+        lampState.isOn = true
+        lampState.brightness = 78
+        lampState.colorTemperatureK = 2700
+        lampState.colorTempMinK = 2000
+        lampState.colorTempMaxK = 9000
+        lampState.supportsColorTemp = true
+        lampState.supportsRGBColor = true
+        lampState.hasAuthoritativeColorCapabilities = true
+
+        var fanState = GoogleHomeTraitState()
+        fanState.isOnline = true
+        fanState.isOn = true
+        fanState.currentFanSpeed = "speed_three"
+        fanState.availableFanSpeeds = [
+            GoogleHomeFanSpeedOption(speedName: "speed_one", displayLabel: "1"),
+            GoogleHomeFanSpeedOption(speedName: "speed_two", displayLabel: "2"),
+            GoogleHomeFanSpeedOption(speedName: "speed_three", displayLabel: "3"),
+            GoogleHomeFanSpeedOption(speedName: "speed_four", displayLabel: "4"),
+            GoogleHomeFanSpeedOption(speedName: "speed_five", displayLabel: "5"),
+            GoogleHomeFanSpeedOption(speedName: "speed_six", displayLabel: "6"),
+        ]
+        fanState.toggles = [
+            GoogleHomeToggleOption(toggleName: "sleep_toggle", displayName: "Sleep Mode", isOn: false),
+            GoogleHomeToggleOption(toggleName: "led_toggle", displayName: "LED Light", isOn: true),
+        ]
+
+        var bedsideState = GoogleHomeTraitState()
+        bedsideState.isOnline = true
+        bedsideState.isOn = false
+        bedsideState.brightness = 45
+        bedsideState.colorTemperatureK = 2400
+        bedsideState.colorTempMinK = 2000
+        bedsideState.colorTempMaxK = 6500
+        bedsideState.supportsColorTemp = true
+        bedsideState.supportsRGBColor = true
+        bedsideState.hasAuthoritativeColorCapabilities = true
+
+        var blindsState = GoogleHomeTraitState()
+        blindsState.isOnline = true
+        blindsState.openPercent = 65
+
+        var plugState = GoogleHomeTraitState()
+        plugState.isOnline = true
+        plugState.isOn = true
+
+        devices = [
+            GoogleHomeDevice(
+                id: "demo-ac",
+                name: "Living Room AC",
+                structureId: homeId,
+                roomId: livingRoom.id,
+                roomName: livingRoom.name,
+                deviceType: .airConditioner,
+                manufacturer: "Panasonic",
+                model: "Inverter Split AC",
+                declaredTraits: [
+                    "action.devices.traits.OnOff",
+                    "action.devices.traits.TemperatureSetting",
+                    "action.devices.traits.FanSpeed",
+                    "action.devices.traits.Modes",
+                ],
+                state: acState
+            ),
+            GoogleHomeDevice(
+                id: "demo-lamp",
+                name: "Floor Lamp",
+                structureId: homeId,
+                roomId: livingRoom.id,
+                roomName: livingRoom.name,
+                deviceType: .light,
+                manufacturer: "Philips Hue",
+                model: "Color Ambiance",
+                declaredTraits: [
+                    "action.devices.traits.OnOff",
+                    "action.devices.traits.Brightness",
+                    "action.devices.traits.ColorSetting",
+                ],
+                state: lampState
+            ),
+            GoogleHomeDevice(
+                id: "demo-fan",
+                name: "Bedroom Fan",
+                structureId: homeId,
+                roomId: bedroom.id,
+                roomName: bedroom.name,
+                deviceType: .fan,
+                manufacturer: "SmartHome",
+                model: "BLDC Smart Fan",
+                declaredTraits: [
+                    "action.devices.traits.OnOff",
+                    "action.devices.traits.FanSpeed",
+                    "action.devices.traits.Toggles",
+                ],
+                state: fanState
+            ),
+            GoogleHomeDevice(
+                id: "demo-bedside",
+                name: "Bedside Lamp",
+                structureId: homeId,
+                roomId: bedroom.id,
+                roomName: bedroom.name,
+                deviceType: .light,
+                manufacturer: "Wipro",
+                model: "RGBCW 9W Bulb",
+                declaredTraits: [
+                    "action.devices.traits.OnOff",
+                    "action.devices.traits.Brightness",
+                    "action.devices.traits.ColorSetting",
+                ],
+                state: bedsideState
+            ),
+            GoogleHomeDevice(
+                id: "demo-blinds",
+                name: "Window Blinds",
+                structureId: homeId,
+                roomId: livingRoom.id,
+                roomName: livingRoom.name,
+                deviceType: .blinds,
+                manufacturer: "Lutron",
+                model: "Serena Shade",
+                declaredTraits: ["action.devices.traits.OpenClose"],
+                state: blindsState
+            ),
+            GoogleHomeDevice(
+                id: "demo-plug",
+                name: "Desk Plug",
+                structureId: homeId,
+                roomId: office.id,
+                roomName: office.name,
+                deviceType: .outlet,
+                manufacturer: "TP-Link",
+                model: "Kasa Smart Plug",
+                declaredTraits: ["action.devices.traits.OnOff"],
+                state: plugState
+            ),
+        ]
+        lastUpdated = Date()
     }
 }

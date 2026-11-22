@@ -5,6 +5,9 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
     case airConditioner
     case thermostat
     case fan
+    case airPurifier
+    case humidifier
+    case heater
     case outlet
     case switchDevice
     case speaker
@@ -12,21 +15,30 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
     case camera
     case lock
     case blinds
+    case vacuum
+    case appliance
+    case sensor
     case other
 
     public static func fromGoogleType(_ raw: String?) -> GoogleHomeDeviceType {
         guard let raw = raw?.uppercased() else { return .other }
-        if raw.contains("LIGHT") { return .light }
-        if raw.contains("AC_UNIT") || raw.contains("AIRCONDITIONER") { return .airConditioner }
+        if raw.contains("LIGHT") || raw.contains("LAMP") { return .light }
+        if raw.contains("AC_UNIT") || raw.contains("AIRCONDITIONER") || raw.contains("AIRCOOLER") { return .airConditioner }
         if raw.contains("THERMOSTAT") { return .thermostat }
-        if raw.contains("FAN") { return .fan }
-        if raw.contains("OUTLET") { return .outlet }
-        if raw.contains("SWITCH") { return .switchDevice }
-        if raw.contains("SPEAKER") || raw.contains("AUDIO") { return .speaker }
-        if raw.contains("TV") || raw.contains("SETTOP") || raw.contains("STREAMING") { return .tv }
+        if raw.contains("AIRPURIFIER") || raw.contains("AIRFRESHENER") { return .airPurifier }
+        if raw.contains("HUMIDIFIER") || raw.contains("DEHUMIDIFIER") { return .humidifier }
+        if raw.contains("HEATER") || raw.contains("FIREPLACE") || raw.contains("RADIATOR") { return .heater }
+        if raw.contains("FAN") || raw.contains("HOOD") { return .fan }
+        if raw.contains("OUTLET") || raw.contains("PLUG") { return .outlet }
+        if raw.contains("SWITCH") || raw.contains("SCENE") { return .switchDevice }
+        if raw.contains("SPEAKER") || raw.contains("AUDIO") || raw.contains("SOUNDBAR") { return .speaker }
+        if raw.contains("TV") || raw.contains("SETTOP") || raw.contains("STREAMING") || raw.contains("REMOTECONTROL") { return .tv }
         if raw.contains("CAMERA") || raw.contains("DOORBELL") { return .camera }
-        if raw.contains("LOCK") { return .lock }
-        if raw.contains("BLINDS") || raw.contains("CURTAIN") || raw.contains("SHADE") { return .blinds }
+        if raw.contains("LOCK") || raw.contains("SECURITYSYSTEM") { return .lock }
+        if raw.contains("BLINDS") || raw.contains("CURTAIN") || raw.contains("SHADE") || raw.contains("GARAGE") || raw.contains("GATE") || raw.contains("WINDOW") || raw.contains("DOOR") { return .blinds }
+        if raw.contains("VACUUM") || raw.contains("MOP") { return .vacuum }
+        if raw.contains("WASHER") || raw.contains("DRYER") || raw.contains("DISHWASHER") || raw.contains("COFFEE") || raw.contains("OVEN") || raw.contains("KETTLE") || raw.contains("REFRIGERATOR") || raw.contains("MICROWAVE") { return .appliance }
+        if raw.contains("SENSOR") || raw.contains("SMOKE") || raw.contains("DETECTOR") { return .sensor }
         return .other
     }
 
@@ -36,6 +48,9 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
         case .airConditioner: return "snowflake"
         case .thermostat: return "thermometer.medium"
         case .fan: return "fan.fill"
+        case .airPurifier: return "aqi.medium"
+        case .humidifier: return "humidity.fill"
+        case .heater: return "flame.fill"
         case .outlet: return "powerplug.fill"
         case .switchDevice: return "lightswitch.on.fill"
         case .speaker: return "hifispeaker.fill"
@@ -43,6 +58,9 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
         case .camera: return "video.fill"
         case .lock: return "lock.fill"
         case .blinds: return "blinds.horizontal.open"
+        case .vacuum: return "circle.dashed.inset.filled"
+        case .appliance: return "washer.fill"
+        case .sensor: return "sensor.tag.radiowaves.forward.fill"
         case .other: return "square.grid.2x2.fill"
         }
     }
@@ -53,6 +71,9 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
         case .airConditioner: return "snowflake"
         case .thermostat: return "thermometer.medium"
         case .fan: return "fan"
+        case .airPurifier: return "aqi.low"
+        case .humidifier: return "humidity"
+        case .heater: return "flame"
         case .outlet: return "powerplug"
         case .switchDevice: return "lightswitch.off"
         case .speaker: return "hifispeaker"
@@ -60,6 +81,9 @@ public enum GoogleHomeDeviceType: String, Codable, Equatable, Sendable {
         case .camera: return "video"
         case .lock: return "lock.open"
         case .blinds: return "blinds.horizontal.closed"
+        case .vacuum: return "circle.dashed"
+        case .appliance: return "washer"
+        case .sensor: return "sensor.tag.radiowaves.forward"
         case .other: return "square.grid.2x2"
         }
     }
@@ -166,6 +190,7 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
     public var colorTempMaxK: Int = 6500
     public var supportsRGBColor: Bool = false
     public var supportsColorTemp: Bool = false
+    public var hasAuthoritativeColorCapabilities: Bool = false
     public var supportedColors: [GoogleHomeColorSwatch] = []
 
     // TemperatureSetting (AC / Thermostat)
@@ -177,9 +202,22 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
     public var maxTempC: Double = 30
     public var temperatureUnit: String = "C"
 
-    // FanSpeed
+    // FanSpeed (discrete steps or continuous 0-100%)
     public var currentFanSpeed: String?
     public var availableFanSpeeds: [GoogleHomeFanSpeedOption] = []
+    public var currentFanSpeedPercent: Int?
+    public var supportsFanSpeedPercent: Bool = false
+
+    // HumiditySetting (Humidifier / Dehumidifier)
+    public var humiditySetpointPercent: Int?
+    public var humidityAmbientPercent: Int?
+    public var minHumidityPercent: Int = 20
+    public var maxHumidityPercent: Int = 80
+
+    // StartStop (Vacuums, Washers, Appliances)
+    public var isRunning: Bool?
+    public var isPaused: Bool?
+    public var isPausable: Bool = false
 
     // Modes & Toggles
     public var modes: [GoogleHomeModeOption] = []
@@ -188,6 +226,7 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
     // Other common traits
     public var openPercent: Int?
     public var volumePercent: Int?
+    public var isMuted: Bool?
     public var isLocked: Bool?
 
     public init() {}
@@ -212,11 +251,21 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
                 colorRGB = nil
             }
         }
-        if incoming.supportsRGBColor { supportsRGBColor = true }
-        if incoming.supportsColorTemp {
-            supportsColorTemp = true
-            colorTempMinK = incoming.colorTempMinK
-            colorTempMaxK = incoming.colorTempMaxK
+        if incoming.hasAuthoritativeColorCapabilities {
+            hasAuthoritativeColorCapabilities = true
+            supportsRGBColor = incoming.supportsRGBColor
+            supportsColorTemp = incoming.supportsColorTemp
+            if incoming.supportsColorTemp {
+                colorTempMinK = incoming.colorTempMinK
+                colorTempMaxK = incoming.colorTempMaxK
+            }
+        } else {
+            if incoming.supportsRGBColor { supportsRGBColor = true }
+            if incoming.supportsColorTemp {
+                supportsColorTemp = true
+                colorTempMinK = incoming.colorTempMinK
+                colorTempMaxK = incoming.colorTempMaxK
+            }
         }
         if !incoming.supportedColors.isEmpty { supportedColors = incoming.supportedColors }
 
@@ -231,6 +280,19 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
         }
         if let v = incoming.currentFanSpeed { currentFanSpeed = v }
         if !incoming.availableFanSpeeds.isEmpty { availableFanSpeeds = incoming.availableFanSpeeds }
+        if let v = incoming.currentFanSpeedPercent { currentFanSpeedPercent = v }
+        if incoming.supportsFanSpeedPercent { supportsFanSpeedPercent = true }
+
+        if let v = incoming.humiditySetpointPercent {
+            humiditySetpointPercent = v
+            minHumidityPercent = incoming.minHumidityPercent
+            maxHumidityPercent = incoming.maxHumidityPercent
+        }
+        if let v = incoming.humidityAmbientPercent { humidityAmbientPercent = v }
+
+        if let v = incoming.isRunning { isRunning = v }
+        if let v = incoming.isPaused { isPaused = v }
+        if incoming.isPausable { isPausable = true }
 
         if !incoming.modes.isEmpty {
             modes = incoming.modes
@@ -240,6 +302,7 @@ public struct GoogleHomeTraitState: Equatable, Sendable {
         }
         if let v = incoming.openPercent { openPercent = v }
         if let v = incoming.volumePercent { volumePercent = v }
+        if let v = incoming.isMuted { isMuted = v }
         if let v = incoming.isLocked { isLocked = v }
     }
 }
@@ -322,11 +385,41 @@ public struct GoogleHomeDevice: Identifiable, Equatable, Sendable {
     }
 
     public var supportsFanSpeed: Bool {
-        !state.availableFanSpeeds.isEmpty || declaredTraits.contains("action.devices.traits.FanSpeed")
+        !state.availableFanSpeeds.isEmpty
+            || state.supportsFanSpeedPercent
+            || state.currentFanSpeedPercent != nil
+            || declaredTraits.contains("action.devices.traits.FanSpeed")
+    }
+
+    public var supportsHumiditySetting: Bool {
+        state.humiditySetpointPercent != nil
+            || declaredTraits.contains("action.devices.traits.HumiditySetting")
+    }
+
+    public var supportsOpenClose: Bool {
+        state.openPercent != nil
+            || declaredTraits.contains("action.devices.traits.OpenClose")
+    }
+
+    public var supportsVolume: Bool {
+        state.volumePercent != nil
+            || declaredTraits.contains("action.devices.traits.Volume")
+    }
+
+    public var supportsLockUnlock: Bool {
+        state.isLocked != nil
+            || declaredTraits.contains("action.devices.traits.LockUnlock")
+    }
+
+    public var supportsStartStop: Bool {
+        state.isRunning != nil
+            || declaredTraits.contains("action.devices.traits.StartStop")
     }
 
     public var hasRichControls: Bool {
         supportsBrightness || supportsColor || supportsTemperatureSetting || supportsFanSpeed
+            || supportsHumiditySetting || supportsOpenClose || supportsVolume
+            || supportsLockUnlock || supportsStartStop
             || !state.modes.isEmpty || !state.toggles.isEmpty
     }
 
@@ -334,7 +427,25 @@ public struct GoogleHomeDevice: Identifiable, Equatable, Sendable {
         if !state.isOnline {
             return "Offline"
         }
+        if let isLocked = state.isLocked, state.isOn == nil {
+            return isLocked ? "Locked" : "Unlocked"
+        }
+        if let openPct = state.openPercent, state.isOn == nil {
+            if openPct == 0 { return "Closed" }
+            if openPct >= 100 { return "Open" }
+            return "Open · \(openPct)%"
+        }
+        if let isRunning = state.isRunning, state.isOn == nil {
+            if state.isPaused == true { return "Paused" }
+            return isRunning ? "Running" : "Idle"
+        }
         guard let isOn = state.isOn else {
+            if let vol = state.volumePercent {
+                return state.isMuted == true ? "Muted" : "Vol \(vol)%"
+            }
+            if let hum = state.humidityAmbientPercent {
+                return "Humidity \(hum)%"
+            }
             return "Online"
         }
         if !isOn {
@@ -358,7 +469,7 @@ public struct GoogleHomeDevice: Identifiable, Equatable, Sendable {
             return parts.isEmpty ? "On" : parts.joined(separator: " · ")
         }
 
-        if deviceType == .light {
+        if deviceType == .light || supportsBrightness || supportsColor {
             if let b = state.brightness {
                 parts.append("\(b)%")
             }
@@ -378,6 +489,14 @@ public struct GoogleHomeDevice: Identifiable, Equatable, Sendable {
             let label = state.availableFanSpeeds.first(where: { $0.speedName == speed })?.displayLabel
                 ?? Self.prettySpeedLabel(speed)
             return "On · Speed \(label)"
+        }
+
+        if let speedPct = state.currentFanSpeedPercent {
+            return "On · \(speedPct)%"
+        }
+
+        if let hum = state.humiditySetpointPercent {
+            return "On · Target \(hum)%"
         }
 
         return "On"
@@ -418,10 +537,15 @@ public enum GoogleHomeTraitUpdate: Equatable, Sendable {
     case colorTemperature(Int)
     case thermostat(mode: String?, setpointC: Double?)
     case fanSpeed(String)
+    case fanSpeedPercent(Int)
+    case humiditySetpoint(Int)
+    case startStop(start: Bool)
+    case pauseUnpause(pause: Bool)
     case mode(name: String, setting: String)
     case toggle(name: String, enabled: Bool)
     case openPercent(Int)
     case volume(Int)
+    case mute(Bool)
     case lock(Bool)
 }
 
@@ -583,8 +707,12 @@ public enum GoogleHomeFoyerCodec {
                     }
 
                 case "color":
+                    if !attrMap.isEmpty {
+                        traitState.hasAuthoritativeColorCapabilities = true
+                    }
                     if let rgb = toInt(stateMap["colorRGB"]) {
                         traitState.colorRGB = rgb
+                        traitState.supportsRGBColor = true
                     }
                     if let tempK = toInt(stateMap["colorTemperature"]) {
                         traitState.colorTemperatureK = tempK
@@ -615,7 +743,9 @@ public enum GoogleHomeFoyerCodec {
                         }
                         if !swatches.isEmpty {
                             traitState.supportedColors = swatches
-                            traitState.supportsRGBColor = true
+                            if swatches.contains(where: { !$0.isWhitePreset }) {
+                                traitState.supportsRGBColor = true
+                            }
                         }
                     }
 
@@ -646,8 +776,38 @@ public enum GoogleHomeFoyerCodec {
                     if let cur = stateMap["currentFanSpeedSetting"] as? String {
                         traitState.currentFanSpeed = cur
                     }
+                    if let pct = toInt(stateMap["currentFanSpeedPercent"]) {
+                        traitState.currentFanSpeedPercent = pct
+                        traitState.supportsFanSpeedPercent = true
+                    }
+                    if let supportsPct = attrMap["supportsFanSpeedPercent"] as? Bool, supportsPct {
+                        traitState.supportsFanSpeedPercent = true
+                    }
                     if let avail = attrMap["availableFanSpeeds"] as? [String: Any] {
                         traitState.availableFanSpeeds = parseFanSpeeds(avail)
+                    }
+
+                case "humiditySetting":
+                    if let sp = toInt(stateMap["humiditySetpointPercent"]) {
+                        traitState.humiditySetpointPercent = sp
+                    }
+                    if let amb = toInt(stateMap["humidityAmbientPercent"]) {
+                        traitState.humidityAmbientPercent = amb
+                    }
+                    if let range = attrMap["humiditySetpointRange"] as? [String: Any] {
+                        if let minP = toInt(range["minPercent"]) { traitState.minHumidityPercent = minP }
+                        if let maxP = toInt(range["maxPercent"]) { traitState.maxHumidityPercent = maxP }
+                    }
+
+                case "startStop":
+                    if let running = stateMap["isRunning"] as? Bool {
+                        traitState.isRunning = running
+                    }
+                    if let paused = stateMap["isPaused"] as? Bool {
+                        traitState.isPaused = paused
+                    }
+                    if let pausable = attrMap["pausable"] as? Bool {
+                        traitState.isPausable = pausable
                     }
 
                 case "modes":
@@ -678,6 +838,9 @@ public enum GoogleHomeFoyerCodec {
                 case "volume":
                     if let vol = toInt(stateMap["currentVolume"]) {
                         traitState.volumePercent = vol
+                    }
+                    if let muted = stateMap["isMuted"] as? Bool {
+                        traitState.isMuted = muted
                     }
 
                 case "lockUnlock":
@@ -737,6 +900,20 @@ public enum GoogleHomeFoyerCodec {
             case .fanSpeed(let speedName):
                 return ["fanSpeed", [["currentFanSpeedSetting", jspbString(speedName)]]]
 
+            case .fanSpeedPercent(let pct):
+                let clamped = min(max(pct, 0), 100)
+                return ["fanSpeed", [["currentFanSpeedPercent", jspbNumber(clamped)]]]
+
+            case .humiditySetpoint(let pct):
+                let clamped = min(max(pct, 0), 100)
+                return ["humiditySetting", [["humiditySetpointPercent", jspbNumber(clamped)]]]
+
+            case .startStop(let start):
+                return ["startStop", [["isRunning", jspbBool(start)]]]
+
+            case .pauseUnpause(let pause):
+                return ["startStop", [["isPaused", jspbBool(pause)]]]
+
             case .mode(let name, let setting):
                 let structVal = jspbStruct([[name, jspbString(setting)]])
                 return ["modes", [["currentModeSetting", structVal]]]
@@ -755,6 +932,9 @@ public enum GoogleHomeFoyerCodec {
             case .volume(let vol):
                 let clamped = min(max(vol, 0), 100)
                 return ["volume", [["currentVolume", jspbNumber(clamped)]]]
+
+            case .mute(let muted):
+                return ["volume", [["isMuted", jspbBool(muted)]]]
 
             case .lock(let locked):
                 return ["lockUnlock", [["isLocked", jspbBool(locked)]]]

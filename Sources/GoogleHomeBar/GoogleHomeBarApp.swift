@@ -10,7 +10,12 @@ struct GoogleHomeBarApp: App {
         let coord = AppCoordinator()
         _coordinator = State(initialValue: coord)
         let shouldOpenWindow = CommandLine.arguments.contains("--open-window")
+        let shouldOpenPopover = CommandLine.arguments.contains("--open-popover")
+        let isDemo = CommandLine.arguments.contains("--demo")
         Task { @MainActor in
+            if isDemo {
+                coord.homeManager.loadDemoHome()
+            }
             if let delegate = NSApplication.shared.delegate as? AppDelegate {
                 delegate.onReopenRequested = {
                     coord.openDetachedWindow()
@@ -18,8 +23,34 @@ struct GoogleHomeBarApp: App {
             }
             if shouldOpenWindow {
                 coord.openDetachedWindow()
+            } else if shouldOpenPopover {
+                Self.openPopoverPreviewWindow(coordinator: coord)
             }
         }
+    }
+
+    @MainActor
+    private static var popoverPreviewWindow: NSWindow?
+
+    @MainActor
+    private static func openPopoverPreviewWindow(coordinator: AppCoordinator) {
+        NSApp.activate(ignoringOtherApps: true)
+        let hosting = NSHostingController(rootView: MenuBarRootView(coordinator: coordinator))
+        let size = coordinator.settings.popoverSize.dimensions
+        let win = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        win.title = "GoogleHomeBar"
+        win.appearance = coordinator.settings.appearanceMode.nsAppearance
+        win.contentViewController = hosting
+        win.setContentSize(size)
+        win.center()
+        win.isReleasedWhenClosed = false
+        popoverPreviewWindow = win
+        win.makeKeyAndOrderFront(nil)
     }
 
     var body: some Scene {
@@ -38,7 +69,11 @@ struct GoogleHomeBarApp: App {
 
         Settings {
             SettingsTabView(coordinator: coordinator)
-                .frame(width: 460, height: 520)
+                .frame(width: 460, height: 560)
+                .preferredColorScheme(coordinator.settings.appearanceMode.colorScheme)
+                .background {
+                    WindowAppearanceSync(appearance: coordinator.settings.appearanceMode.nsAppearance)
+                }
         }
     }
 }

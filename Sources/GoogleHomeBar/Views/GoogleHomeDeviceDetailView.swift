@@ -29,6 +29,10 @@ struct GoogleHomeDeviceDetailView: View {
         device.state.isOn ?? false
     }
 
+    private var controlsInactive: Bool {
+        !device.state.isOnline || (device.supportsOnOff && !isOn)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             detailHeader
@@ -53,32 +57,53 @@ struct GoogleHomeDeviceDetailView: View {
                         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                     }
 
-                    if device.deviceType == .light || device.supportsBrightness || device.supportsColor {
-                        lightControls
-                    }
+                    if device.hasRichControls {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if device.deviceType == .light || device.supportsBrightness || device.supportsColor {
+                                lightControls
+                            }
 
-                    if device.supportsTemperatureSetting {
-                        thermostatControls
-                    }
+                            if device.supportsTemperatureSetting {
+                                thermostatControls
+                            }
 
-                    if device.supportsFanSpeed {
-                        fanSpeedControls
-                    }
+                            if device.supportsFanSpeed {
+                                fanSpeedControls
+                            }
 
-                    if !device.state.modes.isEmpty {
-                        modesSection
-                    }
+                            if let hum = device.state.humiditySetpointPercent {
+                                humiditySection(hum)
+                            }
 
-                    if !device.state.toggles.isEmpty {
-                        togglesSection
-                    }
+                            if !device.state.modes.isEmpty {
+                                modesSection
+                            }
 
-                    if let openPct = device.state.openPercent {
-                        openCloseSection(openPct)
-                    }
+                            if !device.state.toggles.isEmpty {
+                                togglesSection
+                            }
 
-                    if let isLocked = device.state.isLocked {
-                        lockSection(isLocked)
+                            if let openPct = device.state.openPercent {
+                                openCloseSection(openPct)
+                            }
+
+                            if let vol = device.state.volumePercent {
+                                volumeSection(vol)
+                            }
+
+                            if let isLocked = device.state.isLocked {
+                                lockSection(isLocked)
+                            }
+
+                            if let isRunning = device.state.isRunning {
+                                startStopSection(isRunning)
+                            }
+                        }
+                        .saturation(controlsInactive ? 0.08 : 1.0)
+                        .opacity(controlsInactive ? 0.45 : 1.0)
+                        .disabled(controlsInactive)
+                        .allowsHitTesting(!controlsInactive)
+                        .animation(.easeInOut(duration: 0.2), value: controlsInactive)
                     }
 
                     if !device.hasRichControls && device.supportsOnOff {
@@ -103,14 +128,16 @@ struct GoogleHomeDeviceDetailView: View {
         HStack(spacing: 10) {
             if showBackButton, let onBack {
                 Button {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                     onBack()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(Color.primary.opacity(0.07), in: Circle())
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .liquidGlassSurface(in: Circle(), interactive: true)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.liquidGlassCircle)
                 .accessibilityLabel("Back to Devices")
             }
 
@@ -142,12 +169,16 @@ struct GoogleHomeDeviceDetailView: View {
             Spacer()
 
             Button {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                 Task { await homeManager.refreshTraits(for: [device.id], silent: false) }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .liquidGlassSurface(in: Circle(), interactive: true)
+                    .contentShape(Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.liquidGlassCircle)
             .accessibilityLabel("Refresh \(device.name)")
             .help("Refresh state from Google Home")
 
@@ -255,23 +286,26 @@ struct GoogleHomeDeviceDetailView: View {
                     HStack(spacing: 6) {
                         ForEach([25, 50, 75, 100], id: \.self) { pct in
                             let active = isOn && abs(Int(localBrightness.rounded()) - pct) <= 4
-                            Button("\(pct)%") {
+                            Button {
                                 localBrightness = Double(pct)
                                 homeManager.setBrightness(deviceId: device.id, percent: pct, debounced: false)
+                            } label: {
+                                Text("\(pct)%")
+                                    .font(.caption.monospacedDigit().weight(active ? .semibold : .regular))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 5)
+                                    .background(
+                                        active ? accentColor.opacity(0.24) : Color.primary.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 7)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7)
+                                            .strokeBorder(active ? accentColor : Color.clear, lineWidth: 1)
+                                    )
+                                    .contentShape(RoundedRectangle(cornerRadius: 7))
                             }
                             .buttonStyle(.plain)
-                            .font(.caption.monospacedDigit().weight(active ? .semibold : .regular))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                            .background(
-                                active ? accentColor.opacity(0.24) : Color.primary.opacity(0.06),
-                                in: RoundedRectangle(cornerRadius: 7)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 7)
-                                    .strokeBorder(active ? accentColor : Color.clear, lineWidth: 1)
-                            )
-                            .disabled(!device.state.isOnline)
+                            .disabled(controlsInactive)
                         }
                     }
                 }
@@ -389,9 +423,10 @@ struct GoogleHomeDeviceDetailView: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(active ? Color.accentColor : Color.clear, lineWidth: 1)
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!device.state.isOnline)
+                    .disabled(controlsInactive)
                 }
             }
         }
@@ -450,11 +485,12 @@ struct GoogleHomeDeviceDetailView: View {
                                     .foregroundStyle(swatch.useDarkCheckmark ? Color.black : Color.white)
                             }
                         }
+                        .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(swatch.displayName.capitalized)
                     .help(swatch.displayName.capitalized)
-                    .disabled(!device.state.isOnline)
+                    .disabled(controlsInactive)
                 }
             }
 
@@ -532,13 +568,14 @@ struct GoogleHomeDeviceDetailView: View {
                     homeManager.setThermostatSetpoint(deviceId: device.id, tempC: next, debounced: false)
                 } label: {
                     Image(systemName: "minus")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .frame(width: 36, height: 36)
-                        .background(Color.primary.opacity(0.09), in: Circle())
+                        .liquidGlassSurface(in: Circle(), interactive: true)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.liquidGlassCircle)
                 .accessibilityLabel("Decrease temperature")
-                .disabled(!device.state.isOnline || localTempC <= device.state.minTempC)
+                .disabled(controlsInactive || localTempC <= device.state.minTempC)
 
                 VStack(spacing: 2) {
                     Text("\(Int(localTempC.rounded()))°\(unit)")
@@ -556,13 +593,14 @@ struct GoogleHomeDeviceDetailView: View {
                     homeManager.setThermostatSetpoint(deviceId: device.id, tempC: next, debounced: false)
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .frame(width: 36, height: 36)
-                        .background(Color.primary.opacity(0.09), in: Circle())
+                        .liquidGlassSurface(in: Circle(), interactive: true)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.liquidGlassCircle)
                 .accessibilityLabel("Increase temperature")
-                .disabled(!device.state.isOnline || localTempC >= device.state.maxTempC)
+                .disabled(controlsInactive || localTempC >= device.state.maxTempC)
                 Spacer()
             }
             .padding(.vertical, 4)
@@ -614,9 +652,10 @@ struct GoogleHomeDeviceDetailView: View {
                                     RoundedRectangle(cornerRadius: 8)
                                         .strokeBorder(active ? accentColor : Color.clear, lineWidth: 1)
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain)
-                            .disabled(!device.state.isOnline)
+                            .disabled(controlsInactive)
                         }
                     }
                 }
@@ -624,7 +663,7 @@ struct GoogleHomeDeviceDetailView: View {
         }
     }
 
-    // MARK: - Fan Speed Controls (Atomberg Fan & AC Fan Speed)
+    // MARK: - Fan Speed Controls (Smart Fan & AC Fan Speed)
 
     private var fanSpeedControls: some View {
         sectionCard {
@@ -638,6 +677,10 @@ struct GoogleHomeDeviceDetailView: View {
                         ?? GoogleHomeDevice.prettySpeedLabel(current)
                     Text(label)
                         .font(.caption.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                } else if let pct = device.state.currentFanSpeedPercent {
+                    Text("\(pct)%")
+                        .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(accentColor)
                 }
             }
@@ -662,12 +705,45 @@ struct GoogleHomeDeviceDetailView: View {
                                     RoundedRectangle(cornerRadius: 8)
                                         .strokeBorder(active ? accentColor : Color.clear, lineWidth: 1)
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
-                        .disabled(!device.state.isOnline)
+                        .disabled(controlsInactive)
                     }
                 }
+            } else if let pct = device.state.currentFanSpeedPercent {
+                Slider(
+                    value: Binding(
+                        get: { Double(pct) },
+                        set: { homeManager.setFanSpeedPercent(deviceId: device.id, percent: Int($0.rounded())) }
+                    ),
+                    in: 0...100,
+                    step: 5
+                )
+                .disabled(controlsInactive)
             }
+        }
+    }
+
+    private func humiditySection(_ hum: Int) -> some View {
+        sectionCard {
+            HStack {
+                Label("Target Humidity", systemImage: "humidity.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(hum)%")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(hum) },
+                    set: { homeManager.setHumiditySetpoint(deviceId: device.id, percent: Int($0.rounded())) }
+                ),
+                in: Double(device.state.minHumidityPercent)...Double(max(device.state.maxHumidityPercent, device.state.minHumidityPercent + 5)),
+                step: 5
+            )
+            .disabled(controlsInactive)
         }
     }
 
@@ -762,6 +838,44 @@ struct GoogleHomeDeviceDetailView: View {
         }
     }
 
+    private func volumeSection(_ vol: Int) -> some View {
+        let muted = device.state.isMuted ?? false
+        return sectionCard {
+            HStack {
+                Label("Volume", systemImage: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(muted ? "Muted" : "\(vol)%")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(vol) },
+                    set: { homeManager.setVolume(deviceId: device.id, percent: Int($0.rounded())) }
+                ),
+                in: 0...100,
+                step: 5
+            )
+            .disabled(controlsInactive)
+        }
+    }
+
+    private func startStopSection(_ isRunning: Bool) -> some View {
+        sectionCard {
+            HStack {
+                Label(isRunning ? "Running" : "Stopped", systemImage: isRunning ? "play.circle.fill" : "stop.circle")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(isRunning ? "Stop" : "Start") {
+                    homeManager.setRunning(deviceId: device.id, running: !isRunning)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(controlsInactive)
+            }
+        }
+    }
+
     private func lockSection(_ locked: Bool) -> some View {
         sectionCard {
             HStack {
@@ -800,8 +914,7 @@ struct GoogleHomeDeviceDetailView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+        .liquidGlassSurface(in: RoundedRectangle(cornerRadius: 14), shadowRadius: 5)
     }
 
     private func syncLocalControlValues(forceTab: Bool) {
